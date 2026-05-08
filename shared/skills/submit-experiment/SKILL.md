@@ -63,24 +63,46 @@ Read the run config file to extract key parameters. The format varies by project
 
 Extract: model/task name, key hyperparameters, resource requests (partition, GPUs, memory, time limit), and any experiment-defining settings.
 
-### Step 3: Detect target cluster
+### Step 3: Detect target cluster and execution mode
 
-Determine the target cluster from the partition value in the config:
+Determine the target cluster from the partition value in the config, then decide whether submission should happen locally or remotely.
 
-1. Check the partition against the cluster-partition tables in the global CLAUDE.md (injected by lab-claude-config). Each cluster module lists its partitions.
-2. If the partition belongs to a remote cluster, verify SSH access:
+1. Check the partition against the cluster-partition tables in the injected global cluster docs.
+2. Detect the current execution environment:
    ```bash
-   ssh -O check -o ControlPath=~/.ssh/ctrl-lighthouse lighthouse.arc-ts.umich.edu 2>&1
+   hostname -f
    ```
-   If the control socket is dead, tell the user:
-   > SSH control socket is not active. Please run:
-   > ```
-   > ! rm -f ~/.ssh/ctrl-lighthouse && ssh -o ControlMaster=yes -o ControlPath=~/.ssh/ctrl-lighthouse -o ControlPersist=24h lighthouse.arc-ts.umich.edu "echo connected && exit"
-   > ```
-   > Then retry the submission.
+3. Apply this decision rule:
+   - If the current hostname is already on the target cluster login node, use **local submission**.
+   - If the target cluster is **Fir** and the current hostname does **not** look like Fir, Great Lakes, or Lighthouse, treat the current machine as a **local machine / laptop** and use **remote Fir submission** over:
+     ```bash
+     ssh -i ~/.ssh/id_rsa -Y ${USER}@fir.alliancecan.ca "<command>"
+     ```
+   - If the current hostname is Great Lakes and the target is Lighthouse, or the current hostname is Lighthouse and the target is Great Lakes, use the existing **remote socket submission** path.
+   - Otherwise, ask the user how they reach the target cluster before proceeding.
 
-   Do **not** proceed if the socket is dead.
-3. If no remote cluster matches, assume local submission.
+#### Remote Fir pre-check
+
+Before the first remote Fir SSH command in a workflow:
+
+- ask the user for their DUO passcode
+- tell them the SSH login may prompt interactively for it
+
+Then verify remote Fir access:
+
+```bash
+ssh -i ~/.ssh/id_rsa -Y ${USER}@fir.alliancecan.ca "hostname -f && whoami && sinfo --version 2>&1"
+```
+
+#### Great Lakes / Lighthouse remote pre-check
+
+If using the cross-cluster socket path, verify it first:
+
+```bash
+ssh -O check -o ControlPath=~/.ssh/ctrl-lighthouse lighthouse.arc-ts.umich.edu 2>&1
+```
+
+If the control socket is dead, tell the user to re-establish it and do not proceed until it is active.
 
 ### Step 4: Generate experiment name and tags
 
@@ -106,7 +128,8 @@ Example: `sft,llama-7b,baseline`
 Show:
 - **Experiment name**: the generated name
 - **Tags**: the tags
-- **Cluster**: local or remote (which cluster)
+- **Cluster**: target cluster
+- **Execution mode**: local, remote over SSH to Fir, or remote over cross-cluster socket
 - **Config summary**: key hyperparams and resources
 - **Purpose**: the description
 
@@ -128,7 +151,7 @@ cd <project_root>
 EXPERIMENT_NAME=<name> EXPERIMENT_TAGS=<tags> sbatch <job_script>
 ```
 
-**Remote submission** (e.g. Lighthouse):
+**Remote submission** (Great Lakes <-> Lighthouse socket path):
 ```bash
 # Sync code
 cd <project_root>
@@ -140,6 +163,24 @@ ssh -o ControlPath=~/.ssh/ctrl-lighthouse <remote_host> \
 ssh -o ControlPath=~/.ssh/ctrl-lighthouse <remote_host> \
     "cd <remote_project_path> && mkdir -p logs && EXPERIMENT_NAME=<name> EXPERIMENT_TAGS=<tags> <submission_command>" 2>&1
 ```
+
+**Remote submission** (local machine / laptop -> Fir):
+
+Before the first SSH command, ask the user for their DUO passcode.
+
+```bash
+# Sync code if the remote project is a git checkout
+cd <project_root>
+git push 2>&1
+ssh -i ~/.ssh/id_rsa -Y ${USER}@fir.alliancecan.ca \
+    "cd <remote_project_path> && git pull" 2>&1
+
+# Submit remotely on Fir
+ssh -i ~/.ssh/id_rsa -Y ${USER}@fir.alliancecan.ca \
+    "cd <remote_project_path> && mkdir -p logs && EXPERIMENT_NAME=<name> EXPERIMENT_TAGS=<tags> <submission_command>" 2>&1
+```
+
+If the remote Fir project path is not obvious, ask the user before submitting. Do not guess a remote checkout path.
 
 Capture the SLURM job ID from the `sbatch` output (format: `Submitted batch job 12345678`).
 
@@ -203,14 +244,16 @@ Keep the entry under 100 words. If no appropriate section exists, create one.
 Print:
 - Job ID
 - Cluster name
+- Execution mode
 - Detail file path
 - Log monitoring command:
   - Local: `tail -f logs/{EXPERIMENT_NAME}_{job_id}.out`
-  - Remote: `ssh -o ControlPath=~/.ssh/ctrl-<cluster> <host> "tail -50 <project>/logs/{EXPERIMENT_NAME}_{job_id}.out"`
+  - Remote via socket: `ssh -o ControlPath=~/.ssh/ctrl-<cluster> <host> "tail -50 <project>/logs/{EXPERIMENT_NAME}_{job_id}.out"`
+  - Remote via Fir SSH: `ssh -i ~/.ssh/id_rsa -Y ${USER}@fir.alliancecan.ca "tail -50 <remote_project_path>/logs/{EXPERIMENT_NAME}_{job_id}.out"`
 
 ## Environment check
 
-`sbatch` must run on a login or submit node. If the hostname indicates a compute node (e.g. `SLURM_JOB_ID` is set), warn the user.
+`sbatch` must run on a login or submit node. If the hostname indicates a compute node (for example `SLURM_JOB_ID` is set), warn the user. If the current host is a local machine or laptop, do not attempt to run `sbatch` locally for a cluster target; use the appropriate remote SSH path instead.
 
 ## Tip: Enforcing submission discipline
 

@@ -8,11 +8,12 @@ Skills are invoked with `/command`:
 
 - `/slurm-status` - real-time GPU and resource availability on the cluster.
 - `/slurm-job` - create or modify sbatch scripts with correct accounts, partitions, and best practices.
+- `/slurm-seff-report` - retrofit a job script so it schedules a post-job `seff` usage report.
 - `/slurm-debug` - diagnose why a job failed, was killed, or is stuck pending.
 - `/submit-experiment` - submit a Slurm experiment with naming, documentation, and cross-cluster support.
 - `/harvest` - discover completed experiments, collect results, and update documentation.
 - `/onboard` - set up a new lab member's Claude Code configuration.
-- `/connect` - set up cross-cluster SSH and establish the connection.
+- `/connect` - decide local vs remote cluster operation and establish SSH access, including local machine -> Fir.
 
 Agents are invoked with `@agent-name` or used automatically by Claude when relevant:
 
