@@ -13,15 +13,14 @@ login-node safety, experiment conventions, and reusable HPC workflows.
 ### Clone this repo:
 
 ```bash
-git clone https://github.com/ATATC/dra-config ~/dra-config
+git clone https://github.com/ATATC/DRA-config ~/DRA-config
 ```
 
 ### Open Claude Code or Codex and say:
 
 ```text
-Read ~/dra-config/README.md and install the lab config for me.
+Read ~/DRA-config/README.md and install the lab config for me.
 Configure Claude Code, Codex, or both depending on what is available.
-Detect my cluster, fill in my Slurm accounts, and preserve my personal config.
 ```
 
 The assistant should inspect this repo, detect Great Lakes/Lighthouse, write saved setup values, and run `setup.sh`.
@@ -31,7 +30,7 @@ The assistant should inspect this repo, detect Great Lakes/Lighthouse, write sav
 Use this if you want to run the installer yourself:
 
 ```bash
-cd ~/dra-config
+cd ~/DRA-config
 
 # Claude Code only (default)
 ./setup.sh --modules fir --targets claude
@@ -71,7 +70,7 @@ Claude supports hooks/statusline directly. Codex does not, so login-node safety 
 ## Updating
 
 ```bash
-cd ~/dra-config
+cd ~/DRA-config
 git pull
 ./setup.sh --targets <same-targets-you-installed>
 ```
@@ -82,7 +81,7 @@ if both tools are initialized. Or ask Claude Code/Codex to read this README and 
 ## Uninstalling
 
 ```bash
-cd ~/dra-config
+cd ~/DRA-config
 ./uninstall.sh
 ```
 
