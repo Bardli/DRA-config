@@ -14,10 +14,12 @@ In this example, we will be using Codex only, but Claude Code would work in a ve
 
 Use the `/slurm-job` skill to generate a draft version of the scripts.
 
-> Write three bash scripts for preprocessing, fine-tuning, inference, and evaluation respectively. My cluster account
+> Write four bash scripts for preprocessing, fine-tuning, inference, and evaluation respectively. My cluster account
 > is `rrg-jma` for GPU and `def-jma-ab` for CPU, and my username is `atatc`.
 
 ![scripts generation](assets/generate-scripts.png)
+
+There is a little typo in the prompt in the screenshot, but Codex caught it: it should be "four" scripts, not "three".
 
 ## Include Usage Report Generation
 
