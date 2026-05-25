@@ -1,6 +1,6 @@
 ---
 name: slurm-seff-report
-description: Modify a Slurm job script so it runs `seff` at the end of the existing script and writes a usage report file when the job finishes.
+description: Modify a Slurm job script so it runs `seff` at the end of the existing script and writes a usage report file when the job finishes. Use when you want a job to self-report its CPU/memory/GPU efficiency, or the user asks to add a seff summary to a job script.
 allowed-tools: Read, Edit, Write, Glob, Grep
 ---
 
