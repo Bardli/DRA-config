@@ -1,5 +1,15 @@
 # Billing, Fairshare, and Account Selection on Alliance Canada
 
+## Contents
+
+- How Slurm bills jobs (MAX_TRES)
+- Break-even CPU/Mem per GPU (general principle)
+- What's billed: requested × wall-clock, NOT actual usage
+- Fairshare / LevelFS
+- Account selection — MANDATORY pre-submit step
+- Group-wide efficiency visibility (limits)
+- Useful commands
+
 ## How Slurm bills jobs (MAX_TRES)
 
 Alliance uses **MAX_TRES** billing on every cluster: each second, a job's cost

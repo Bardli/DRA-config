@@ -3,6 +3,19 @@
 > Sourced from live Fir session (2026-05) + Alliance wiki mirror oldid=164899 (June 2025).
 > Status: **Operational.** `$CC_CLUSTER=fir`, `$CC_RESTRICTED=true`.
 
+## Contents
+
+- At a glance
+- Hardware
+- GPU sizing — MIG slice names
+- Storage
+- Fir-specific quirks
+- Partitions and wall-time
+- TRES weights (observed 2026-04, partition `gpubase_bygpu_b1`)
+- Daily cost (12h, requested vs used)
+- Account selection — RRG first, then default
+- Common pitfalls on Fir
+
 ## At a glance
 
 | Item | Value |

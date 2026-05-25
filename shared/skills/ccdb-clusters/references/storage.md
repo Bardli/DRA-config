@@ -1,5 +1,18 @@
 # Storage on Alliance Canada
 
+## Contents
+
+- Three-tier filesystem (every cluster)
+- Cluster-specific quotas (selected)
+- Keep everything in `$SCRATCH`
+- Job-local fast disk: `$SLURM_TMPDIR`
+- Staging targets — what counts against which quota
+- Bulk staging recipe — many small files
+- I/O speedup expected from staging
+- When NOT to stage
+- Purge policies
+- Common gotchas
+
 ## Three-tier filesystem (every cluster)
 
 | Variable | Path pattern | Quota | Use for | Backup | Persistence |

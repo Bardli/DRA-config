@@ -4,6 +4,17 @@ These commands work on every Alliance cluster (Fir, Trillium, Cedar, Graham,
 Béluga, Narval, Niagara, Rorqual, Killarney). Cluster-specific partition
 names and wall-time limits live in `clusters/<cluster>.md`.
 
+## Contents
+
+- Check status
+- Submit jobs
+- Cancel jobs
+- View logs
+- Post-hoc efficiency
+- Resource selection cheat sheet (general — see per-cluster pages for specifics)
+- Partition / wall-time limits
+- Common gotchas
+
 ## Check status
 
 ```bash

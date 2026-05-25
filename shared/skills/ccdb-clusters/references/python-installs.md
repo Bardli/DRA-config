@@ -4,6 +4,16 @@ The CCDB Python wheelhouse on `/cvmfs/soft.computecanada.ca/...` is the same
 on every Alliance cluster. Most of this page applies identically on Cedar,
 Graham, Béluga, Narval, Niagara, Fir, Trillium, Rorqual, and Killarney.
 
+## Contents
+
+- pip on Alliance (works out-of-the-box)
+- uv on Alliance (much faster, but needs explicit `--find-links`)
+- GOTCHA: `uv venv --python python3.11` picks the WRONG interpreter
+- Verification: CCDB wheels carry a `+computecanada` suffix
+- Pre-resolve deps FIRST (save hours on big installs)
+- SAM2 / MedSAM2 install pitfalls (case study)
+- Compute-node internet caveats (matters for `pip install` inside jobs)
+
 ## pip on Alliance (works out-of-the-box)
 
 After `module load python/3.x.y`, pip auto-reads `$PIP_CONFIG_FILE`

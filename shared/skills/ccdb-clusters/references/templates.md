@@ -4,6 +4,16 @@ Templates below use generic placeholders (`<your-gpu-account>`, `$SCRATCH`) so
 they work on any Alliance cluster. Cluster-specific GPU types and partition
 names live in `clusters/<cluster>.md`.
 
+## Contents
+
+- Boilerplate header
+- Single-GPU MIG (Fir-style — H100 with MIG slices)
+- Single full GPU (Cedar V100 / Graham V100 / Narval A100 / Fir H100)
+- Multi-GPU DDP (whole-node H100 / A100 / V100)
+- Interactive job (smoke test, debug, dev)
+- CPU-only long job (data prep, archiving, conversion)
+- PyTorch version requirement for H100 / L40s / A100
+
 ## Boilerplate header
 
 Every Alliance job script should start with:
