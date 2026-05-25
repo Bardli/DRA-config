@@ -1,6 +1,6 @@
 ---
 name: onboard
-description: One-time setup to get a lab member onto Alliance Canada (DRAC) with this shared Claude Code config. Sets up SSH key access to the cluster, detects the Slurm allocation account, writes saved values, and runs setup.sh. Use when first configuring a machine.
+description: One-time setup to get a lab member onto Alliance Canada (DRAC) with this shared Claude Code config. Sets up key-based SSH with ControlMaster reuse (one interactive Duo login, then passwordless), detects the Slurm allocation account, writes saved values, and runs setup.sh. Use when first configuring a machine.
 allowed-tools: Bash(git *), Bash(hostname *), Bash(whoami), Bash(which *), Bash(cat *), Bash(ls *), Bash(mkdir *), Bash(chmod *), Bash(ssh-keygen *), Bash(ssh *), Bash(sinfo *), Bash(sshare *), Bash(sacctmgr *), Bash(*/setup.sh *), Bash(${CLAUDE_SKILL_DIR}/scripts/*), Read, Edit, Write
 ---
 
@@ -9,8 +9,9 @@ allowed-tools: Bash(git *), Bash(hostname *), Bash(whoami), Bash(which *), Bash(
 You are helping a lab member do the **one-time** setup that connects this Claude Code
 config to an Alliance Canada (DRAC / CCDB) cluster — Fir by default. Walk them through it
 interactively; be concise. Greet with **"Welcome onboard, Foreseer!"** then explain: this
-sets up passwordless SSH access to the cluster, records the user's Slurm allocation account,
-and installs the lab config so Claude understands the cluster.
+sets up key-based SSH with ControlMaster reuse (one interactive Duo login, then passwordless),
+records the user's Slurm allocation account, and installs the lab config so Claude understands
+the cluster.
 
 Two things are distinct and both needed: **(A) SSH login access** (username + a registered
 SSH key) and **(B) a Slurm allocation account** (the `--account=` value, e.g. `def-<pi>_gpu`).
@@ -27,42 +28,67 @@ SSH key) and **(B) a Slurm allocation account** (the `--account=` value, e.g. `d
 ## Step A — SSH access (one-time; skip if already on a cluster login node)
 
 If `hostname -f` already ends in `.alliancecan.ca`, you are on the cluster — skip to Step B.
-Otherwise set up key-based access from this local machine. **This only needs to be done once
-per machine** — the `connect` skill reuses it afterward and never re-uploads.
+Otherwise set up key-based access from this local machine. **Done once per machine** — `connect`
+reuses it afterward and never re-uploads.
 
-1. **Ensure an SSH keypair exists:**
+**Read first — the agent cannot log in for the user.** Fir requires **Duo 2FA on every fresh
+login, even with a registered key** (the key is only factor 1). The agent has no tty / no
+ssh-askpass, so the **user** runs the interactive login; the agent only writes files and reuses
+the connection afterward. Full detail (existing/encrypted keys, key-format conversion, Windows,
+agent-driven Mode B, troubleshooting) is in `references/fir-ssh-setup.md` — read it if anything
+below fails.
+
+1. **Find or create a key.** Check for an existing one first (the user may already have a key in
+   any format — see the reference):
    ```bash
    ls ~/.ssh/*.pub 2>/dev/null
    ```
-   If none, create one (ed25519):
+   If none, create one:
    ```bash
    ssh-keygen -t ed25519 -C "<user-email-or-label>" -f ~/.ssh/id_ed25519
    ```
-2. **Register the PUBLIC key with CCDB (one-time MFA on the website):**
+2. **Register the PUBLIC key with CCDB** (one-time MFA on the website):
    ```bash
-   cat ~/.ssh/id_ed25519.pub
+   cat ~/.ssh/id_ed25519.pub   # or the user's existing <key>.pub
    ```
-   Tell the user to paste that line at <https://ccdb.alliancecan.ca/ssh_authorized_keys>
-   (CCDB → Manage SSH Keys). After it propagates (usually minutes), key-based login works on
-   all Alliance clusters. Do **not** handle the user's password or Duo passcode in chat.
+   Have the user paste that line at <https://ccdb.alliancecan.ca/ssh_authorized_keys>
+   (CCDB → Manage SSH Keys). **Propagation takes ~10–30 min** — failing right after upload is
+   normal. Never handle the user's password or Duo passcode in chat.
 3. **Add a `~/.ssh/config` host entry** (ask for the Alliance username if it differs from local
-   `whoami`):
+   `whoami`; use the user's key path if not `id_ed25519`):
    ```text
    Host fir.alliancecan.ca
        User <ccdb_username>
        IdentityFile ~/.ssh/id_ed25519
        IdentitiesOnly yes
+       AddKeysToAgent yes
+       ServerAliveInterval 60
        ControlMaster auto
        ControlPath ~/.ssh/cm-%r@%h:%p
        ControlPersist 8h
    ```
-   (ControlMaster is an optional speed-up — it reuses one connection. With a registered key it
-   is not required, but it avoids repeated handshakes.)
-4. **Verify:**
+   ControlMaster is **essential, not optional**: it is the only path to passwordless reuse, because
+   Duo is required on every fresh login. (Windows has no multiplexing — see the reference.)
    ```bash
+   chmod 600 ~/.ssh/config
+   ```
+4. **First connection — default Mode B.** Run `/connect`: the agent brings up the ControlMaster
+   socket itself and you just approve the Duo push on your phone (the 8h socket then makes reuse
+   passwordless). If the key has a passphrase not in `ssh-agent`, `/connect` is fail-loud and falls
+   back to **Mode A** — you run the login yourself; in Claude Code:
+   ```
+   ! ssh fir.alliancecan.ca "hostname -f && whoami"
+   ```
+   (enter the passphrase, pick `1` at the Duo menu, approve the push).
+5. **Verify (agent).** Once the user reports success, reuse the socket:
+   ```bash
+   ssh -O check fir.alliancecan.ca          # "Master running" = socket live
    ssh fir.alliancecan.ca "hostname -f && whoami"
    ```
-   If this still prompts for a password, the key has not propagated yet — wait and retry.
+   - `Permission denied (publickey)` **before** any Duo prompt = real key problem (not propagated,
+     or local/CCDB keys not a pair) → see the reference's troubleshooting.
+   - Reaching the Duo prompt = the key works; that's normal 2FA — have the user complete it in their
+     Mode A login above, not a failure to debug.
 
 ## Step B — Detect the Slurm allocation account
 

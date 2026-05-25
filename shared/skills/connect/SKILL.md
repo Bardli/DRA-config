@@ -1,7 +1,7 @@
 ---
 name: connect
 description: Decide whether cluster work runs locally or over SSH, and establish/verify the SSH path to an Alliance Canada cluster (Fir). Assumes the one-time key setup was done by /onboard. Use when you need to run Slurm commands but may be on a laptop.
-allowed-tools: Bash(ssh *), Bash(hostname *), Bash(whoami), Bash(grep *), Bash(test *), Bash(ls *), Bash(sinfo *), Read
+allowed-tools: Bash(ssh *), Bash(hostname *), Bash(whoami), Bash(grep *), Bash(test *), Bash(ls *), Bash(sinfo *), Bash(${CLAUDE_SKILL_DIR}/scripts/*), Read
 ---
 
 # SSH Connect (Alliance Canada)
@@ -33,23 +33,39 @@ Access is key-based through the `fir.alliancecan.ca` host in `~/.ssh/config`. Co
 grep -qE "^Host[[:space:]]+fir.alliancecan.ca" ~/.ssh/config && echo "host OK" || echo "host MISSING"
 ```
 
-If it is MISSING (or the verify step below prompts for a password), the one-time setup has not
-been done — **stop and tell the user to run `/onboard`**, which generates the key, registers it
-with CCDB, and writes the host entry. Do not generate keys or collect passwords / Duo here.
+**If MISSING** → the one-time setup hasn't been done. Stop and tell the user to run `/onboard`
+(generates/uploads the key, writes the host entry). Don't generate keys or collect passwords/Duo here.
 
-If ControlMaster is configured, a live socket means no prompt:
-
-```bash
-ssh -O check fir.alliancecan.ca 2>&1   # "Master running" = socket live
-```
-
-Verify connectivity (reuses the registered key / socket — no prompt once onboard is done):
+**If host OK**, check the ControlMaster socket — this is the key step. Fir requires **Duo 2FA on
+every fresh login**, so the agent can only connect when a warm socket already exists:
 
 ```bash
-ssh fir.alliancecan.ca "hostname -f && whoami && sinfo --version 2>&1"
+ssh -O check fir.alliancecan.ca 2>&1   # "Master running (pid=...)" = socket live
 ```
 
-Once this succeeds, run all Fir Slurm control, file inspection, and submissions remotely:
+- **Socket live** → reuse it directly (no prompt):
+  ```bash
+  ssh fir.alliancecan.ca "hostname -f && whoami && sinfo --version 2>&1"
+  ```
+- **No master / socket expired** (ControlPersist elapsed, or first connect this session) → the
+  agent has no tty for the passphrase/Duo, so default to **Mode B** (agent-driven): bring the
+  socket up yourself and have the user approve the Duo push on their phone. Tell the user a push
+  is coming, then run:
+  ```bash
+  ${CLAUDE_SKILL_DIR}/scripts/warm-socket.sh fir.alliancecan.ca
+  ```
+  The script is **fail-loud**: it only succeeds once the master socket truly exists. If it exits
+  non-zero (the key needs a passphrase not in `ssh-agent`, or Duo timed out), fall back to
+  **Mode A** — have the user run it themselves; in Claude Code:
+  ```
+  ! ssh fir.alliancecan.ca "hostname -f && whoami"
+  ```
+  Either way the 8h socket then lets the agent reuse the connection. This is **not** an onboarding
+  failure — only send the user to `/onboard` if the host entry is MISSING or the key itself is
+  rejected (`Permission denied (publickey)` **before** any Duo prompt). For key/format problems
+  see the onboard skill's `references/fir-ssh-setup.md`.
+
+Once the socket is live, run all Fir Slurm control, file inspection, and submissions remotely:
 
 ```bash
 ssh fir.alliancecan.ca "<command>"
@@ -74,8 +90,15 @@ Summarize in one of these forms:
 - [x] Fir commands wrapped in ssh
 ```
 
+### Socket cold (already onboarded, just needs re-login)
+```text
+## Local Machine -> Fir: Re-warm needed
+- [ ] ControlMaster socket expired — ran warm-socket.sh (Mode B); user approved the Duo push
+- [x] Key + ~/.ssh/config already set up (no /onboard needed)
+```
+
 ### Not set up yet
 ```text
 ## Local Machine -> Fir: Needs onboarding
-- [ ] No working SSH path — run /onboard first (one-time key upload to CCDB)
+- [ ] No ~/.ssh/config host entry, or key rejected — run /onboard first (one-time key upload to CCDB)
 ```
