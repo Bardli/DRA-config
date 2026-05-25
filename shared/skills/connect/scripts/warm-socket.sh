@@ -30,7 +30,7 @@ esac
 EOF
 chmod 700 "$ASKPASS"
 
-echo ">>> Bringing up master to $HOST — APPROVE THE DUO PUSH ON YOUR PHONE now."
+echo ">>> Bringing up master to $HOST — approve the Duo push on your phone now."
 if ! SSH_ASKPASS="$ASKPASS" SSH_ASKPASS_REQUIRE=force \
        timeout 90 ssh -o StrictHostKeyChecking=accept-new -fN "$HOST"; then
     echo "ERROR: Mode B login failed (key may need a passphrase not in ssh-agent, or Duo timed out)." >&2
