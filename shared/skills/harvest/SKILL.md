@@ -1,192 +1,105 @@
 ---
 name: harvest
-description: Discover completed SLURM experiments, collect results, and update experiment documentation.
-argument-hint: "[--auto] [experiment-name]"
-allowed-tools: Bash(sacct *), Bash(scontrol *), Bash(squeue *), Bash(ls *), Bash(tail *), Bash(jq *), Bash(hostname *), Bash(date *), Bash(cat *), Bash(find *), Read, Edit, Write, Glob, Grep
+description: Discover finished SLURM experiments, resolve their final status from sacct, update each run's metadata.yaml (the source of truth), and regenerate the docs/experiments.md index. Use to collect results after jobs run.
+argument-hint: "[--auto] [run_code]"
+allowed-tools: Bash(sacct *), Bash(squeue *), Bash(ssh *), Bash(ls *), Bash(tail *), Bash(cat *), Bash(find *), Bash(date *), Bash(hostname *), Read, Edit, Write, Glob, Grep
 ---
 
 # Harvest Experiment Results
 
-Discover completed SLURM experiments, collect their results, and update experiment documentation (`docs/experiments.md` index + `docs/experiments/<detail>.md` files).
+Resolve the status of submitted experiments and refresh their records. **`metadata.yaml` in each
+`experiment/<run_code>/` folder is the single source of truth.** This skill reads it, updates it
+from `sacct`, and then *regenerates* the human-readable `docs/experiments.md` index from all
+`metadata.yaml` files. The markdown index is a derived view — it is never parsed for truth and
+never the place a status is stored.
 
 ## Arguments
 
-- No args: discover and harvest **all** pending experiments
-- `$ARGUMENTS[0]` = `--auto`: skip confirmation, harvest silently (useful with `/loop`)
-- `$ARGUMENTS[0]` = experiment name: harvest only that specific experiment
+- no args → resolve every run whose `status` is `submitted` or `running`.
+- `--auto` → skip the confirmation prompt (safe for `/loop`).
+- `<run_code>` → only that run.
 
-## Workflow
-
-### Step 0: Discover project context
-
-Before collecting results, understand what this project tracks:
-
-1. **Read the project's `CLAUDE.md`** (repo root). Look for:
-   - Where result files are stored and their format
-   - What metrics matter (e.g. accuracy, loss, F1, BLEU, perplexity)
-   - Post-processing or summary commands to run after harvesting
-   - Log file locations and naming patterns
-   - Job types and their result collection strategies
-
-2. **Learn the reporting style**: Read 1-2 existing **completed** detail files in `docs/experiments/` (those with real Results content, not "Pending"). This shows:
-   - What metrics are reported and in what format (tables, bullet points)
-   - How observations are written
-   - What level of detail is expected
-
-3. If no completed detail files exist and CLAUDE.md doesn't specify metrics, collect whatever quantitative results are found in output files and logs.
-
-### Step 1: Discover harvestable experiments
-
-Use **both** methods in parallel and deduplicate:
-
-#### Method A: Completion markers
+## Step 0 — Discover open runs
 
 ```bash
-ls logs/*.done.json 2>/dev/null
+for m in experiment/*/metadata.yaml; do
+  grep -qE '^status:[[:space:]]*(submitted|running)' "$m" && echo "$m"
+done
 ```
 
-Read each `.done.json` file. Expected schema:
-```json
-{
-  "experiment_name": "...",
-  "job_id": "...",
-  "job_type": "...",
-  "status": "completed|failed",
-  "finished_at": "ISO 8601",
-  "checkpoint": "... (optional)",
-  "wandb_run_id": "... (optional)"
-}
-```
+Read each open run's `metadata.yaml` for its `slurm_job_ids` and `run_code`. (Read with the Read
+tool — do not regex-extract fields you intend to overwrite.)
 
-#### Method B: Fallback sacct scan
+## Step 1 — Resolve status from sacct (authoritative)
 
-Read `docs/experiments/` detail files. Find those with `**Status**: Submitted` or `**Status**: Running`. Extract the Job ID from the `**Job ID**:` line.
+For each open run, query the most recent job id. Use `-X` (allocation only) for a clean terminal
+state, and handle empty output:
 
-For each, check SLURM:
 ```bash
-sacct -j <JOB_ID> --format=JobID%15,State%15,ExitCode%8,Elapsed%12,End%20 --noheader --parsable2 2>/dev/null
+sacct -X -j <JOB_ID> --format=State%20,ExitCode,Elapsed,End --noheader --parsable2 2>/dev/null
 ```
 
-A job is harvestable if its state is `COMPLETED`, `FAILED`, `TIMEOUT`, `CANCELLED`, or `OUT_OF_MEMORY`.
+If you are on a laptop, run it over `ssh fir.alliancecan.ca "<sacct …>"`.
 
-#### Filter already-harvested
+**Status precedence (conflict rule):**
 
-Skip any experiment whose detail file already has real results in the `## Results` section (i.e., not just "Pending" or "_To be filled_").
+1. A non-empty `sacct` terminal state is authoritative: `COMPLETED|FAILED|TIMEOUT|CANCELLED|OUT_OF_MEMORY|NODE_FAIL` → map to `completed|failed|timeout|cancelled|oom|failed`.
+2. `RUNNING`/`PENDING` → leave `status: running`/`submitted`; skip (report "still running/pending").
+3. If `sacct` returns **empty** (old job purged, cross-cluster, sacct down): fall back to a
+   `<RUN_DIR>/exp_log/.done.json` marker if present (`{"status": …}`). If neither resolves,
+   leave the status unchanged and report "unresolved — could not reach sacct".
 
-If a specific experiment name was provided as an argument, only harvest that one.
+Never guess a terminal state; only write one you actually resolved.
 
-### Step 2: Show discovery summary
+## Step 2 — Update each run's metadata.yaml (SSOT)
 
-Print what was found:
-```
-Found N harvestable experiment(s):
-  - experiment-name-1 (job 12345) — COMPLETED
-  - experiment-name-2 (job 12346) — FAILED
-```
+For a resolved run, edit `experiment/<run_code>/metadata.yaml`:
 
-If `--auto` was NOT passed, ask the user for confirmation before proceeding. If nothing found, report "No pending experiments to harvest" and exit.
+- set `status:` to the resolved value,
+- set `finished_at:` to the `End` time (or now, ISO 8601),
+- if a primary metric is discoverable (job log tail, a results file named in the run, or a
+  `.done.json` field), set `best_metric: { name: …, value: … }`.
 
-### Step 3: Collect results for each experiment
+Read the log tail for context / metrics:
 
-The collection strategy depends on the job outcome.
-
-#### For COMPLETED jobs
-
-1. **Read the experiment's detail file** — the Goal and Setup sections describe what was run and what to look for.
-
-2. **Find result files** — use the project's CLAUDE.md to know where results are stored. Common patterns:
-   - Result JSONs in a results directory (check CLAUDE.md for path)
-   - Output files in `results/`, `output/`, or a turbo storage path
-   - Metrics printed in SLURM log output
-
-3. **Read SLURM log tail** (last 50 lines of `logs/<name>_<jobid>.out`) for:
-   - Completion messages and timing
-   - Inline results or metrics printed at end of job
-   - Training duration, checkpoint paths
-
-4. **Extract metrics** — use the project's CLAUDE.md and the reporting style from Step 0 to know which metrics to extract and how to format them.
-
-5. If the `.done.json` marker has a `checkpoint` field, note it for the results.
-
-#### For FAILED / TIMEOUT / CANCELLED / OUT_OF_MEMORY jobs
-
-1. Read SLURM log tail (`.out` and `.err`, last 50 lines each) for error messages.
-2. Run `sacct -j <JOB_ID> --format=State,ExitCode,MaxRSS,Elapsed --noheader --parsable2` for resource usage.
-3. Check for partial results (e.g. training finished but post-processing didn't run).
-4. Summarize the failure reason.
-
-### Step 4: Update documentation
-
-For each harvested experiment:
-
-#### 4a: Update detail file (`docs/experiments/<date>_<name>.md`)
-
-- Change `**Status**: Submitted` or `**Status**: Running` to the actual status (`Completed`, `Failed`, `Timed out`, `Cancelled`, `Out of memory`)
-- Replace the `## Results` section content:
-  - For completed jobs with metrics: use a table or bullet list matching the project's reporting style (learned in Step 0)
-  - For failed jobs: brief failure description
-- Update `## Observations` with a brief interpretation (1-2 sentences based on the results and the Goal section)
-
-#### 4b: Update index (`docs/experiments.md`)
-
-Find the bullet for this experiment and update with the key result. Example:
-- Before: `- **sft-llama7b-baseline** (7B full-FT): First SFT run on Llama. [detail](...)`
-- After: `- **sft-llama7b-baseline** (7B full-FT): 72.3% val acc — strong baseline. [detail](...)`
-
-Keep the `[detail](...)` link. Keep entry under 100 words.
-
-#### 4c: Run post-processing (if configured)
-
-If the project's CLAUDE.md specifies a results summary command (e.g. a script that aggregates results), run it.
-
-### Step 5: Report
-
-Print a summary:
-
-```
-Harvested N experiment(s):
-
-  experiment-name (job 12345) — COMPLETED
-    Key result: XX.X% accuracy (or whatever the primary metric is)
-    Updated: docs/experiments/YYYY-MM-DD_name.md
-    Updated: docs/experiments.md
-
-Remaining pending: M experiment(s)
+```bash
+tail -50 experiment/<run_code>/exp_log/logs/*.out 2>/dev/null
+tail -50 experiment/<run_code>/exp_log/logs/*.err 2>/dev/null   # for failures
 ```
 
-## Edge Cases
+For failures, record a one-line reason in `notes` (e.g. OOM at epoch N). Do not fabricate metrics.
 
-- **No result files found**: Report "No result files found for <name>." Update status but leave Results as "No results produced."
-- **Partial results**: Report which parts succeeded and which are missing.
-- **Job still running**: Skip with message "Still running (elapsed: HH:MM:SS)"
-- **Job pending**: Skip with message "Still pending in queue"
-- **Multiple jobs for same experiment**: Use the most recent (highest job ID)
-- **Cross-cluster jobs**: `sacct` may not work for jobs on a remote cluster. Fall back to marker files. If neither works, note that results must be harvested from the remote cluster.
+## Step 3 — Regenerate the index (derived view, with a lock)
 
-## Environment Check
+After all `metadata.yaml` updates, rebuild `docs/experiments.md` **from** the metadata files so
+the index can never drift from the truth. Guard against concurrent `/harvest` runs with a simple
+lock:
 
-Check hostname to determine access level:
-- Login node: Full access to sacct, logs, result files
-- Compute node: sacct works but warn user this is unusual for harvesting
-- Local/unknown: No sacct — rely on marker files and result files only
-
-## `.done.json` Marker Convention
-
-Job scripts are encouraged to write a completion marker so `/harvest` can auto-discover finished experiments:
-
-**Location**: `logs/<experiment_name>_<job_id>.done.json`
-
-**Schema**:
-```json
-{
-  "experiment_name": "string (matches EXPERIMENT_NAME env var)",
-  "job_id": "string (SLURM job ID)",
-  "job_type": "string (project-defined job type)",
-  "status": "completed | failed",
-  "finished_at": "ISO 8601 timestamp",
-  "checkpoint": "string (path to final checkpoint, optional)",
-  "wandb_run_id": "string (optional)"
-}
+```bash
+exec 9>docs/.experiments.lock && flock 9 || { echo "another harvest is running"; exit 0; }
 ```
 
-This is a **convention, not a requirement**. If markers are not present, the skill falls back to sacct scanning of experiments found in `docs/experiments/` detail files.
+Then write `docs/experiments.md` fresh: a header plus one row per `experiment/*/metadata.yaml`,
+sorted (e.g. by `started_at`), each line showing `run_code`, `status`, the key result
+(`best_metric`), and the one-line `objective.goal`. Overwrite the file entirely — do not append.
+
+## Step 4 — Report
+
+```
+Harvested N run(s):
+  <run_code> (job <id>) — COMPLETED   best=<metric>:<value>
+  <run_code> (job <id>) — FAILED      OOM
+Still open: M (running/pending/unresolved)
+```
+
+If `--auto` was not passed, show the discovery summary in Step 0 and confirm before writing.
+
+## Notes
+
+- **No markdown parsing for state** — status lives only in `metadata.yaml`. This removes the
+  brittle "parse `Status: Submitted` from prose" failure mode.
+- **Idempotent**: re-running only touches runs still `submitted`/`running`; resolved runs are
+  skipped.
+- **`.done.json` marker (optional)**: a job script may write
+  `experiment/<run_code>/exp_log/.done.json` (`{"status": "...", "finished_at": "...",
+  "best_metric": {...}}`) so harvest can resolve without sacct. It is a fallback, not the SSOT.

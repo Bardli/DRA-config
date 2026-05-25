@@ -6,7 +6,10 @@
 # On login nodes:   warns against heavy operations, suggests srun/sbatch
 # On unknown hosts:  outputs {} (no context, graceful degradation)
 #
-# Never blocks — always allows the command to proceed.
+# Never blocks — always allows the command to proceed. This is an ADVISORY
+# nudge, not a safety guarantee: it cannot stop a heavy command on a login node,
+# it only injects context the model may heed. For a hard guarantee, enforce via
+# deny rules in settings/permissions, not this hook.
 
 set -euo pipefail
 

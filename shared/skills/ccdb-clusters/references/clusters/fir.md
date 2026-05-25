@@ -90,23 +90,26 @@ node-pool rebalancing.
 
 ## Partitions and wall-time
 
-Fir uses banded partitions where SLURM picks the smallest band that fits
-your `--time` request:
+Fir has two banded GPU partition families; SLURM auto-picks the smallest band
+that fits your `--time` (you normally do **not** set `--partition` yourself):
 
-| Partition | Wall-time | Notes |
-|---|---|---|
-| `gpubase_bygpu_b1` | 3 h | |
-| `gpubase_bygpu_b2` | 12 h | (was 6 h pre-2026-05; verify with `sinfo`) |
-| `gpubase_bygpu_b3` | 1 day | (was 12 h pre-2026-05) |
-| `gpubase_bygpu_b4` | 3 days | |
-| `gpubase_bygpu_b5` | 7 days | |
-| `gpubase_bygpu_b6` | 28 days | |
-| `gpubackfill_bygpu` | (varies) | low-priority fill-in |
+- `gpubase_bygpu_b<N>` — scheduled per **GPU** (MIG slices / single-GPU jobs)
+- `gpubase_bynode_b<N>` — scheduled per **whole node** (multi-GPU / full-node jobs)
 
-You normally don't pick the partition; SLURM picks it. **Verify the band
-walltimes with `sinfo -o "%.20P %.20l"` before sizing a long job** —
-walltime bands have shifted at least once (the table above was last
-verified 2026-05-06).
+| Band | Wall-time |
+|---|---|
+| `b1` | 3 h |
+| `b2` | 12 h |
+| `b3` | 1 day |
+| `b4` | 3 days |
+| `b5` | 7 days |
+
+GPU bands run **b1–b5 only (max 7 days)** — there is **no GPU `b6`**. (`b6` = 28 days
+exists only for the *CPU* family `cpubase_bynode_b6`.) Also present: `gpubackfill`
+(low-priority fill-in) and `gpubase_interac` (interactive).
+
+Verified live via `sinfo -o "%.30P %.14l"` (2026-05-25). Re-verify before sizing a
+long job — bands have shifted before.
 
 ## TRES weights (observed 2026-04, partition `gpubase_bygpu_b1`)
 

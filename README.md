@@ -62,7 +62,7 @@ Shared workflows include:
 - `slurm-debug` - diagnose failed, killed, or pending jobs.
 - `submit-experiment` - submit documented Slurm experiments.
 - `harvest` - collect completed experiment results.
-- `connect` - set up cross-cluster SSH.
+- `connect` - establish/verify key-based SSH access to the cluster (one-time key upload done by `onboard`).
 - `slurm-queue`, `slurm-resource`, `slurm-storage` - Claude agents converted into Codex skills where needed.
 
 Claude supports hooks/statusline directly. Codex does not, so login-node safety and tool usage rules are injected into

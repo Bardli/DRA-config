@@ -1,96 +1,92 @@
 ---
 name: slurm-status
 description: Show current GPU and resource usage on Fir, who is using H100 GPUs, and what resources the user can request right now.
-allowed-tools: Bash(sinfo *), Bash(squeue *), Bash(sacctmgr *)
+allowed-tools: Bash(sinfo *), Bash(squeue *), Bash(sacctmgr *), Bash(seff *)
 ---
 
 # Fir Slurm Resource Status Report
 
-Run the following commands and synthesize a clear, concise status report for the user.
+Run the commands below and synthesize a clear, concise status report.
 
 ## User context
 
 - Username: `{{FIR_USERNAME}}`
 - GPU account: `{{FIR_ACCOUNT}}`
-- GPU partition: `{{FIR_PARTITION}}`
-- GPU type / constraint: `{{FIR_GPU_TYPE}}`
-- Available Fir GPU profiles to watch for: full `h100`, `nvidia_h100_80gb_hbm3_3g.40gb`, `nvidia_h100_80gb_hbm3_2g.20gb`, and `nvidia_h100_80gb_hbm3_1g.10gb`
-- Fir is a shared Alliance cluster, so account allocations mainly influence queue priority rather than setting a fixed simultaneous GPU cap.
-- The assistant should prefer a smoke test first, then use `seff` from a completed job to tune requests downward when possible.
-- For Fir job scripts, the assistant must specify GPU selection with `--gpus-per-node=<gpu_type>:<count>` only, and must not recommend `--partition`, `--gres`, or `--constraint` for GPU selection.
+- Default GPU type: `{{FIR_GPU_TYPE}}`
+- Fir GPU profiles to watch for: full `h100`, `nvidia_h100_80gb_hbm3_3g.40gb`,
+  `nvidia_h100_80gb_hbm3_2g.20gb`, `nvidia_h100_80gb_hbm3_1g.10gb`.
+- Fir's GPU partitions are **banded** (`gpubase_bygpu_b1..b5` per-GPU,
+  `gpubase_bynode_b1..b5` whole-node, plus `gpubase_interac`). You do **not** pick a
+  partition — SLURM auto-selects by `--time`. The same physical GPU nodes appear in
+  every band, so a single band is representative for node-availability queries.
+- Account allocations influence queue priority, not a fixed GPU cap.
+- For GPU selection always use `--gpus-per-node=<gpu_type>:<count>` — never
+  `--partition`, `--gres`, or `--constraint`.
 
 ## Steps
 
-### 1. GPU partition overview
+Define the GPU partition set once:
 
-Run:
 ```bash
-sinfo -p {{FIR_PARTITION}} -o "%12P %16G %5D %8T %10C %12m" 2>&1
+GPUPARTS=gpubase_bygpu_b1,gpubase_bygpu_b2,gpubase_bygpu_b3,gpubase_bygpu_b4,gpubase_bygpu_b5,gpubase_bynode_b1,gpubase_bynode_b2,gpubase_bynode_b3,gpubase_bynode_b4,gpubase_bynode_b5,gpubase_interac
 ```
 
-Summarize: partition, GPU or MIG type, total nodes, node states, total vs available CPUs.
+### 1. GPU node / MIG overview
 
-### 2. Detailed node usage
-
-Run:
 ```bash
-sinfo -p {{FIR_PARTITION}} -N -o "%12N %16G %20C %10e %5T" 2>&1
+sinfo -p gpubase_bygpu_b1 -N -o "%N %G %C %e %t" 2>&1
 ```
 
-Summarize how many full GPUs or MIG slices and how much memory are free.
+The GPU nodes are shared across all bands, so band `b1` is representative.
+Summarize: GPU/MIG gres per node, CPUs (alloc/idle/other/total), free memory, state.
 
-### 3. Who is using GPUs right now
+### 2. Who is using GPUs right now
 
-Run:
 ```bash
-squeue -p {{FIR_PARTITION}} -t R -o "%.10i %.12u %.16a %.2t %.12M %.4C %8m %b %R" 2>&1
+squeue -p "$GPUPARTS" -t R -o "%.10i %.12u %.16a %.2t %.12M %.4C %8m %b %R" 2>&1
 ```
 
-Summarize by user and account: how many GPUs are in use and by whom. Highlight the user's own account (`{{FIR_ACCOUNT}}`) if it appears.
+Summarize by user/account how many GPUs are in use. Highlight `{{FIR_ACCOUNT}}` if present.
 
-### 4. Pending jobs
+### 3. Pending GPU jobs
 
-Run:
 ```bash
-squeue -p {{FIR_PARTITION}} -t PD -o "%.10i %.12u %.16a %.20r %b" 2>&1 | head -30
+squeue -p "$GPUPARTS" -t PD -o "%.10i %.12u %.16a %.20r %b" 2>&1 | head -30
 ```
 
-Summarize: how many jobs are pending, by whom, and why (reason codes).
+Summarize how many are pending, by whom, and the reason codes.
 
-### 5. User's current jobs
+### 4. Your current jobs
 
-Run:
 ```bash
 squeue -u {{FIR_USERNAME}} -o "%.10i %.12P %.20j %.2t %.12M %.4C %8m %b %R" 2>&1
 ```
 
-### 6. User account associations
+### 5. Your account associations
 
-Run:
 ```bash
-sacctmgr show association user={{FIR_USERNAME}} format=account%20,partition%20,qos%40 --noheader 2>&1 | head -20
+sacctmgr show association user={{FIR_USERNAME}} format=account%24,qos%20 --noheader 2>&1 | head -20
 ```
 
-Summarize any Fir-relevant accounts or partitions that appear.
+### 6. Efficiency check for a recent completed job
 
-### 7. Efficiency check for a recent completed job
+If the user names a completed job ID (or one is known from context):
 
-If the user names a completed job ID, or if a recent relevant completed job is known from context, run:
 ```bash
 seff <jobid> 2>&1
 ```
 
-Summarize CPU efficiency, memory efficiency, elapsed time, and whether the job appears overprovisioned.
+Summarize CPU/memory efficiency, elapsed time, and whether it looks overprovisioned.
 
-### 8. What can you request right now?
+### 7. What can you request right now?
 
-Based on the above data, report:
-- **Available H100 GPUs** on `{{FIR_PARTITION}}`
-- **Available MIG profiles** on `{{FIR_PARTITION}}`, broken down by `3g.40gb`, `2g.20gb`, and `1g.10gb` when visible
-- **Who is currently using the partition** and whether the queue looks busy
-- **A smoke-test recommendation first** on the smallest feasible profile
-- **A concrete recommended request size** for the actual job, with suggested `--gpus-per-node`, `--cpus-per-task`, `--mem`, and `--time`
-- **A tuning note based on `seff`** when a completed job is available
-- Any obvious blockers such as drained nodes, a deep pending queue, or account mismatch
+From the above, report:
+
+- **Available full H100s and MIG slices** (from step 1), by profile (`3g.40gb` / `2g.20gb` / `1g.10gb`).
+- **Who is using the GPUs** and whether the queue looks busy (steps 2–3).
+- **A smoke-test recommendation first** on the smallest feasible profile.
+- **A concrete request size** for the real job: `--gpus-per-node`, `--cpus-per-task`, `--mem`, `--time`.
+- **A tuning note from `seff`** when a completed job is available.
+- Any blockers: drained nodes, a deep pending queue, or an account mismatch.
 
 Present the final report as a clean markdown summary with sections.

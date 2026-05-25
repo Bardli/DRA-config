@@ -11,6 +11,6 @@
 Once connected:
 
 ```bash
-sinfo -p {{FIR_PARTITION}} -o "%12P %16G %5D %8T %10C %12m"
+sinfo -p gpubase_bygpu_b1 -o "%12P %16G %5D %8T %10C %12m"   # representative GPU band
 squeue -u $(whoami)
 ```

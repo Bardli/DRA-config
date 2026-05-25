@@ -236,8 +236,7 @@ for module in "${MODULE_LIST[@]}"; do
             info "Configuring Fir module..."
             prompt_var "FIR_USERNAME" "Slurm username" "$(whoami)"
             prompt_var "FIR_ACCOUNT" "Alliance GPU account" ""
-            prompt_var "FIR_PARTITION" "GPU partition name" "gpu"
-            prompt_var "FIR_GPU_TYPE" "GPU type / constraint" "h100"
+            prompt_var "FIR_GPU_TYPE" "Default GPU type" "h100"
             ;;
         none)
             info "No cluster modules selected."
