@@ -118,8 +118,15 @@ that fits your `--time` (you normally do **not** set `--partition` yourself):
 | `b5` | 7 days |
 
 GPU bands run **b1–b5 only (max 7 days)** — there is **no GPU `b6`**. (`b6` = 28 days
-exists only for the *CPU* family `cpubase_bynode_b6`.) Also present: `gpubackfill`
-(low-priority fill-in) and `gpubase_interac` (interactive).
+exists only for the *CPU* family `cpubase_bynode_b6`.) Also present: `gpubase_interac`
+(interactive), plus two **scheduler-internal** lower-priority lanes you **cannot** target with
+`--partition` (the `job_submit` lua plugin rejects explicit requests — keep submitting by
+`--time` only): `gpubackfill` (PriorityTier 2, opportunistic, not preemptible) and `gpupreempt`
+(PriorityTier 1, `PreemptMode=REQUEUE` — jobs are requeued when a higher-tier job needs the node).
+Their partition configs list longer `MaxTime` (1 day / 122 days), but the plugin still enforces the
+**7-day user cap** regardless. Verified 2026-05-25: `sbatch --test-only --partition=gpupreempt
+--time=10-0` → rejected *"exceeds the maximum walltime of 7.0 days"*; `--partition=gpubackfill` →
+*"submit without the --partition option"*.
 
 Verified live via `sinfo -o "%.30P %.14l"` (2026-05-25). Re-verify before sizing a
 long job — bands have shifted before.
