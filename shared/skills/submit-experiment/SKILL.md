@@ -2,7 +2,7 @@
 name: submit-experiment
 description: Submit a SLURM experiment on Alliance Canada (Fir) with a per-run folder, a metadata.yaml single source of truth (status + git provenance + objective), and a config/script snapshot. Use when launching a tracked experiment.
 argument-hint: "<job_type> <run_config_or_script> [purpose description]"
-allowed-tools: Bash(sbatch *), Bash(squeue *), Bash(tail *), Bash(ssh *), Bash(git *), Bash(ls *), Bash(cat *), Bash(cp *), Bash(mkdir *), Bash(hostname *), Bash(date *), Read, Edit, Write, Glob, Grep
+allowed-tools: Bash(sbatch *), Bash(salloc *), Bash(srun *), Bash(seff *), Bash(squeue *), Bash(tail *), Bash(ssh *), Bash(git *), Bash(ls *), Bash(cat *), Bash(cp *), Bash(mkdir *), Bash(hostname *), Bash(date *), Read, Edit, Write, Glob, Grep
 ---
 
 # Submit Experiment
@@ -40,6 +40,29 @@ Note the naming convention already in use and avoid collisions.
 Read `$2` and extract: task/model, key hyperparameters, and resource requests (GPU profile,
 count, mem, time). For Fir, the GPU is `--gpus-per-node=<gpu_type>:<count>` (full `h100` or a MIG
 slice); see the `slurm-job` / `ccdb-clusters` skills.
+
+## Step 2.5 — Optional: smoke test to size resources
+
+Under-provisioned `--mem` is the most common Fir failure mode (jobs that run near 100% memory
+often OOM or get cancelled). Before committing the full run, **ask the user** whether they want a
+quick smoke test to measure real needs — especially for a new job type or an untested config:
+
+> Run a smoke test first to size memory/GPU/time? (recommended for a new job type or config)
+
+If yes, run the real job at reduced scale (a few steps / a tiny subset) in a short interactive
+session — or one-shot with `srun` — then read the peaks:
+
+```bash
+salloc --account=<account> --gpus-per-node=<gpu_type>:1 --cpus-per-task=8 --mem=32G --time=1:00:00
+# inside the allocation, run the job briefly, then measure:
+/usr/bin/time -v <cmd>                                          # peak RSS = "Maximum resident set size"
+nvidia-smi --query-gpu=memory.used,memory.total --format=csv    # peak GPU memory
+```
+
+Set the real job from the observed peaks: `--mem` = peak RSS + ~20% headroom; GPU profile = full
+`h100` vs a MIG slice (`*_1g.10gb` / `*_2g.20gb` / `*_3g.40gb`) when peak GPU memory is small;
+`--time` from the smoke-test rate. Skip this for a re-run of an already-sized job. `/slurm-debug`
+and `/slurm-seff-report` help interpret a prior run's `seff`.
 
 ## Step 3 — Local vs remote execution
 
