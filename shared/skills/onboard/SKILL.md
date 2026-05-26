@@ -21,7 +21,7 @@ SSH key) and **(B) a Slurm allocation account** (the `--account=` value, e.g. `d
 1. `ls -ld ~/.claude 2>/dev/null` — if missing, ask the user to run `claude` once first.
 2. Confirm the repo is cloned: `ls -d ~/DRA-config 2>/dev/null`. If not:
    ```bash
-   git clone https://github.com/Bardli/DRA-config.git ~/DRA-config
+   git clone https://github.com/ATATC/DRA-config.git ~/DRA-config
    ```
 3. `which jq` — needed for Claude's statusline.
 

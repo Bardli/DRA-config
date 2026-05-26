@@ -13,7 +13,7 @@ login-node safety, experiment conventions, and reusable HPC workflows.
 ### Clone this repo:
 
 ```bash
-git clone https://github.com/Bardli/DRA-config ~/DRA-config
+git clone https://github.com/ATATC/DRA-config ~/DRA-config
 ```
 
 ### Open Claude Code or Codex and say:
