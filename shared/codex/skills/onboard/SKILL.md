@@ -72,6 +72,9 @@ reference bundled with the Claude `onboard` skill: `references/fir-ssh-setup.md`
 
 ## Step B — Detect the Slurm allocation account
 
+**Prerequisite:** Step A's verify must have passed (socket live). If not — `Permission denied
+(publickey)` (key still propagating, ~10–30 min) or Duo not done — finish Step A first.
+
 ```bash
 ssh fir.alliancecan.ca "whoami; sshare -U -l --parsable2 | head"
 ```

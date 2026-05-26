@@ -92,6 +92,11 @@ below fails.
 
 ## Step B — Detect the Slurm allocation account
 
+**Prerequisite:** Step A's verify must have succeeded (`hostname`+`whoami` returned / socket live).
+If it didn't — `Permission denied (publickey)` (key still propagating, ~10–30 min) or the Duo
+login isn't done — **finish Step A first**; do not run the queries below against a connection that
+isn't up (you'll get a confusing error instead of the clear Step A diagnosis).
+
 Run on the cluster (directly if on a login node, else over the SSH from Step A). Don't make the
 user look things up — run it yourself:
 
