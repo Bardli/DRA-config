@@ -36,8 +36,8 @@ re-uploads.
 **The agent cannot log in for the user.** Fir requires **Duo 2FA on every fresh login, even with
 a registered key** (the key is only factor 1), and Codex has no tty for the passphrase/Duo. So the
 **user** runs the interactive login; the agent only writes files and reuses the socket. Full detail
-(key formats, encrypted keys, Windows, agent-driven Mode B, troubleshooting) is in the Fir SSH
-reference bundled with the Claude `onboard` skill: `references/fir-ssh-setup.md`.
+(key formats, encrypted keys, Windows, agent-driven Mode B, troubleshooting) is in
+`references/fir-ssh-setup.md` (bundled with this skill).
 
 1. Ensure a keypair (the user may already have one in any format — see the reference):
    `ls ~/.ssh/*.pub 2>/dev/null`; if none:

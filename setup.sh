@@ -619,16 +619,10 @@ if target_enabled codex; then
         done
     fi
 
-    if [[ -d "$SCRIPT_DIR/shared/agents" ]]; then
-        for agent_file in "$SCRIPT_DIR/shared/agents"/*.md; do
-            if [[ -f "$agent_file" ]]; then
-                agent_name="$(basename "$agent_file" .md)"
-                mkdir -p "$BUILD_DIR/codex/skills/$agent_name"
-                cp "$agent_file" "$BUILD_DIR/codex/skills/$agent_name/SKILL.md"
-                create_symlink "$BUILD_DIR/codex/skills/$agent_name" "$CODEX_DIR/skills/$agent_name"
-            fi
-        done
-    fi
+    # NOTE: shared/agents/*.md are Claude sub-agent format (tools:/model: fields) and are
+    # NOT auto-copied to Codex skills (the frontmatter is wrong for skills, and 'tools:'
+    # is not a skill field — pre-approvals would silently break). Codex equivalents live
+    # explicitly under shared/codex/skills/ (slurm-queue, slurm-resource, slurm-storage).
 fi
 
 # --- Summary ---
@@ -697,14 +691,6 @@ if target_enabled codex; then
             if [[ -d "$skill_dir" ]]; then
                 skill_name="$(basename "$skill_dir")"
                 echo "    ~/.codex/skills/$skill_name -> shared/codex/skills/$skill_name"
-            fi
-        done
-    fi
-    if [[ -d "$SCRIPT_DIR/shared/agents" ]]; then
-        for agent_file in "$SCRIPT_DIR/shared/agents"/*.md; do
-            if [[ -f "$agent_file" ]]; then
-                agent_name="$(basename "$agent_file" .md)"
-                echo "    ~/.codex/skills/$agent_name -> build/codex/skills/$agent_name"
             fi
         done
     fi
