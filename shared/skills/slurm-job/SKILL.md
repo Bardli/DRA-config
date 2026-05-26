@@ -1,6 +1,6 @@
 ---
 name: slurm-job
-description: Create or modify an sbatch job script with correct Alliance Canada (Fir) directives — account, GPU profile, resource requests, and best-practice defaults. Use when writing or editing a .sh/.slurm job script.
+description: Create or modify an sbatch job script with correct Alliance Canada (Fir) directives — account, GPU profile, resource requests, and best-practice defaults. Use when writing or editing a .sh/.slurm job script. Does NOT submit — use /submit-experiment to actually launch a tracked run.
 allowed-tools: Bash(sinfo *), Bash(sshare *), Bash(sacctmgr *), Bash(whoami), Bash(hostname *), Bash(cat *), Bash(ls *), Read, Edit, Write, Glob, Grep
 ---
 
