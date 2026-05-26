@@ -133,6 +133,29 @@ cd ~/DRA-config && ./setup.sh --modules fir --non-interactive
 
 (Add `--targets claude,codex` if configuring Codex too.)
 
+## Step E — Smoke test (verify the install routes correctly)
+
+Run the routing-trigger eval as a final check that the bundle installed cleanly and the skill
+descriptions route as expected. Catches broken symlinks, missing skills, or a description
+regression **before** it bites a real workflow.
+
+1. **Locate the eval:** `~/DRA-config/evals/routing-trigger.json` (18 cases: positive,
+   disambiguation/boundary, negative).
+2. **Dispatch a fresh `general-purpose` subagent** with (a) the 9 installed skill descriptions
+   (`head ~/.claude/skills/*/SKILL.md` or equivalent) and (b) the 18 queries. Instruct it to
+   route each case and return strict JSON (`id`, `picked_skill`, `confidence`, `why`,
+   `runner_up`). No tool execution — paper routing only.
+3. **Score** each `picked_skill` against `expect`. Baseline (in
+   `~/DRA-config/evals/routing-trigger-baseline.md`) was **18/18 routed, 17 clean** with one
+   boundary case (D5) noted there.
+4. **Report:**
+   - All clear → install verified, hand off to the user.
+   - Failures → name each failed case + the skill whose description likely needs tightening;
+     suggest re-running after the fix.
+
+Skippable if the user wants to start immediately — they can rerun the eval anytime against the
+installed bundle.
+
 ## Post-setup
 
 1. Read and briefly summarize `~/.claude/CLAUDE.md` so the user sees what was installed.

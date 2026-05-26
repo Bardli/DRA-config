@@ -103,6 +103,15 @@ cd ~/DRA-config && ./setup.sh --modules fir --targets <targets> --non-interactiv
 
 Examples: `--targets codex` (Codex only), `--targets claude,codex` (both).
 
+## Step E — Smoke test (optional but recommended)
+
+Verify the install routes correctly: open a fresh Codex session (or sub-context if your harness
+supports one) and feed it the 18 routing cases in `~/DRA-config/evals/routing-trigger.json`
+together with the 9 installed skill descriptions. For each case, the model should pick a
+`picked_skill` that matches `expect`. Baseline:
+`~/DRA-config/evals/routing-trigger-baseline.md` (18/18 routed, 17 clean). Failures point at a
+description that needs tightening.
+
 ## Post-setup
 
 - Claude: lab block in `~/.claude/CLAUDE.md`, settings, hooks, skills, agents.
