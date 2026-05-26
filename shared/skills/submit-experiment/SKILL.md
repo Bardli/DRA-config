@@ -18,7 +18,9 @@ from `metadata.yaml` (by `/harvest`), never the other way around.
 - `$2` — run config or job-script path.
 - Remaining text — free-form purpose.
 
-If args are missing, ask. (This is an interactive assistant — asking is fine.)
+**Infer, don't interrogate.** Derive what you can from the config, the conversation, and the
+parent run's `metadata.yaml`; only ask for what you genuinely cannot infer. Present a complete
+draft in Step 6 and let the user confirm or correct — never make them fill every field.
 
 ## Step 0 — Discover project context
 
@@ -76,11 +78,20 @@ hostname -f
   working, stop and have the user run `/connect` (or `/onboard` for first-time setup). Do not
   collect passwords / Duo in chat.
 
-## Step 4 — Generate run code + tags
+## Step 4 — Infer run_code, tags, and the objective (a draft to confirm)
 
-`run_code`: a unique, filesystem-safe identifier following the project's existing convention
-(scan `experiment/*/`). Default `<job_type>-<descriptor>-<slug>` (lowercase, hyphens). `tags`: a
-YAML list of job type + descriptor + purpose keywords.
+Derive a draft — do not quiz the user field-by-field:
+
+- `run_code`: unique, filesystem-safe, following the project convention (scan `experiment/*/`).
+  Default `<job_type>-<descriptor>-<slug>` (lowercase, hyphens).
+- `tags`: job type + descriptor + purpose keywords.
+- `objective.goal`, `expected_result {metric, value, rationale}`, `decision_rule`: **infer** from
+  the config (what changed vs the parent), the conversation, and the **parent run's
+  `metadata.yaml`** (its result is usually the expected baseline). If this forks a prior run, set
+  `parent_run`.
+- Optional scientific fields (`hypothesis`, `assumptions`, …) only if the user actually expressed them.
+
+The user fills any gaps at the Step 6 confirm — not through an upfront questionnaire.
 
 ## Step 5 — Capture git provenance (do NOT skip)
 
@@ -94,12 +105,14 @@ will not fully reproduce the run unless they commit first. (Record `dirty: true`
 clean provenance when it is not.) When dirty, you will also save the working-tree diff to the run
 folder in Step 7 (`git.diff`) so the run stays reproducible.
 
-## Step 6 — Confirm (the gate)
+## Step 6 — Confirm the draft (the gate)
 
-Show: `run_code`, tags, cluster, execution mode, account, GPU/resources, the objective, the
-decision rule, and a **⚠ dirty working tree** warning if applicable. Wait for explicit user
-confirmation before submitting. This confirmation is the safety gate (the skill stays
-model-invocable by design — the gate, not metadata, prevents unwanted submits).
+Show the full **inferred** draft: `run_code`, tags, cluster, execution mode, account,
+GPU/resources, and the **objective + expected_result + decision_rule you inferred**, plus a
+**⚠ dirty working tree** warning if applicable. Ask the user to confirm or correct — this single
+gate is where they adjust the inference, not an upfront questionnaire. Wait for explicit
+confirmation before submitting (the gate, not metadata, prevents unwanted submits; the skill stays
+model-invocable by design).
 
 ## Step 7 — Create the run folder + write metadata.yaml
 
@@ -147,6 +160,11 @@ wandb_run_id: <id|null>
 **Optional scientific / lineage fields** — `parent_run`, `superseded_by`, `stage`, `base`,
 `hypothesis`, `assumptions`, `objective.expected_intermediate_signals` — add as the work warrants;
 the complete annotated example is in `references/experiment-layout.md`.
+
+Then create the **narrative stub** `docs/experiments/<run_code>.md` (the `md` half — the story):
+a `# <run_code>` title, `## Goal` + `## Setup` filled from the confirmed objective and config, and
+`## Results` / `## Observations` marked _Pending — filled by `/harvest`_. Keep status out of the
+prose; status lives only in `metadata.yaml`.
 
 ## Step 8 — Submit
 
