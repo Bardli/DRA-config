@@ -24,7 +24,7 @@ ls -ld ~/.claude ~/.codex 2>/dev/null
 - Configure whichever exists (default both if both exist).
 - Confirm the repo: `ls -d ~/DRA-config 2>/dev/null`; if missing:
   ```bash
-  git clone https://github.com/ATATC/DRA-config.git ~/DRA-config
+  git clone https://github.com/Bardli/DRA-config.git ~/DRA-config
   ```
 
 ## Step A — SSH access (one-time; skip if already on a cluster login node)
