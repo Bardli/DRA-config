@@ -28,9 +28,10 @@ There is a little typo in the prompt in the screenshot, but Codex caught it: it 
 
 ## Include Usage Report Generation
 
-Then, use the `/slurm-seff-report` skill to modify the scripts to include automatic usage report generation.
+Then, use the `/slurm-seff-report` skill to modify the scripts to include an inline cgroup CPU/memory
+snapshot. This is only an in-script snapshot; run `seff <jobid>` after completion for final accounting.
 
-> Now integrate resource usage report generation into the jobs.
+> Now integrate inline CPU/memory usage snapshot generation into the jobs.
 
 ![include report generation](assets/include-report-generation.png)
 

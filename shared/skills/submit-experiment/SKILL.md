@@ -64,7 +64,8 @@ nvidia-smi --query-gpu=memory.used,memory.total --format=csv    # peak GPU memor
 Set the real job from the observed peaks: `--mem` = peak RSS + ~20% headroom; GPU profile = full
 `h100` vs a MIG slice (`*_1g.10gb` / `*_2g.20gb` / `*_3g.40gb`) when peak GPU memory is small;
 `--time` from the smoke-test rate. Skip this for a re-run of an already-sized job. `/slurm-debug`
-and `/slurm-seff-report` help interpret a prior run's `seff`.
+helps interpret prior `seff` / logs. `/slurm-seff-report` only adds an inline cgroup CPU/memory
+snapshot to future scripts; it is not a replacement for final `seff`.
 
 ## Step 3 — Local vs remote execution
 

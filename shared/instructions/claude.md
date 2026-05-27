@@ -8,7 +8,7 @@ Skills are invoked with `/command`:
 
 - `/slurm-status` - real-time GPU and resource availability on the cluster.
 - `/slurm-job` - create or modify sbatch scripts with correct accounts, GPU profiles, and best practices.
-- `/slurm-seff-report` - retrofit a job script so it schedules a post-job `seff` usage report.
+- `/slurm-seff-report` - retrofit a job script with an inline cgroup CPU/memory snapshot; final `seff` after job exit remains authoritative.
 - `/slurm-debug` - diagnose why a job failed, was killed, or is stuck pending.
 - `/submit-experiment` - submit a Slurm experiment with naming, documentation, and remote-submission support.
 - `/harvest` - discover completed experiments, collect results, and update documentation.

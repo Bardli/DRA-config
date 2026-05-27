@@ -13,7 +13,8 @@ Claude B" pattern (`anthropic-best-practices.md` L758).
 | P2 | laptop, need to run sinfo, set up the SSH path | connect | connect | high | ✅ |
 | P3 | what GPUs are currently free on fir | slurm-status | slurm-status | high | ✅ |
 | P4 | write sbatch for single-GPU h100 fine-tune | slurm-job | slurm-job | high | ✅ |
-| P5 | modify training script to print seff at the end | slurm-seff-report | slurm-seff-report | high | ✅ |
+| P5 | modify training script to write inline CPU/memory usage snapshot | slurm-seff-report | slurm-seff-report | high | ✅ |
+| P5b | print seff at end, or add reliable in-script snapshot | slurm-seff-report | slurm-seff-report | high | ✅ |
 | P6 | submit configs/lora_r16.yaml as tracked experiment | submit-experiment | submit-experiment | high | ✅ |
 | P7 | job 41290895 failed with exit code 1 | slurm-debug | slurm-debug | high | ✅ |
 | P8 | collect results from finished experiments | harvest | harvest | high | ✅ |

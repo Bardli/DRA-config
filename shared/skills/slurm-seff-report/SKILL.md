@@ -1,30 +1,29 @@
 ---
 name: slurm-seff-report
-description: Modify a Slurm job script to write a self-contained CPU + memory usage report at the end, reading kernel cgroup-v2 files (memory.peak, cpu.stat) directly — works in-script because it does not depend on sacct/seff finalizing only after the job exits. Use when you want a job to automatically self-report its CPU/memory efficiency without a follow-up job.
+description: Add an inline cgroup-v2 CPU/memory snapshot to a Slurm job script. This is not a seff replacement: it can match seff for direct batch-step workloads but can under-report srun or multi-step jobs, and it cannot report GPU efficiency. Use when the user wants an immediate in-script usage snapshot or asks to print seff at the end; explain that final seff after job exit remains authoritative.
 allowed-tools: Read, Edit, Write, Glob, Grep
 ---
 
-# Add an Inline Cgroup-Based Usage Report
+# Add an Inline Cgroup Snapshot
 
 Modify the user's existing Slurm job script so it writes a per-job usage report
-(`logs/<job_name>_<jobid>_usage.txt`) at the **end** of the script, by reading the kernel's
-cgroup-v2 accounting files directly.
+(`logs/<job_name>_<jobid>_usage.txt`) at the **end** of the script, by reading the current
+cgroup-v2 accounting files directly. Treat this as an **inline CPU/memory snapshot**, not as a
+replacement for `seff`.
 
-## Why this pattern (and not `seff $SLURM_JOB_ID` in-script)
+## What this is and is not
 
-- `seff` queries `sacct`. While the job script is still running, the job is in state `RUNNING`
+- `seff` queries `sacct`. While the job script is still running, the job is usually `RUNNING`
   and `sacct` has **not finalized** the per-step accounting (`TotalCPU`/`Elapsed`/CPU efficiency).
   In-script `seff` therefore prints incomplete or misleading data, or refuses with "Job is still
   running".
-- A follow-up `--dependency=afterany` sbatch that runs `seff` post-completion is the obvious
-  alternative, but on Alliance clusters where the user's CPU account has low FairShare the
-  follow-up can queue indefinitely. No scheduler dependency is acceptable here.
 - The **cgroup-v2 files** (`memory.peak`, `cpu.stat`) are kernel-tracked **continuously**, are
-  accurate at the moment you read them, and exist inside the job's own cgroup. Verified live on
-  Fir 2026-05 (RHEL 9 EL9, kernel 5.14, cgroup v2) inside a real `srun` job step.
-
-GPU efficiency is **not** available from cgroup — the cluster's `sacct`/`seff` is the correct
-source for that, **after** the job exits. The report points the user there.
+  available before `sacct` finalizes, and can be useful as an immediate snapshot.
+- This block reads the cgroup of the report block's own shell. On Fir, live tests on 2026-05-27
+  showed it matched `seff` for a direct batch-step workload, but **under-reported an `srun`
+  workload** because the real work ran in a separate Slurm step.
+- GPU efficiency is **not** available from cgroup. The cluster's `seff <jobid>` after the job exits
+  remains the authoritative final report for CPU, memory, and GPU accounting.
 
 ## Inputs
 
@@ -39,6 +38,9 @@ If neither is given, ask.
 ### 1. Inspect the script
 
 - `#SBATCH` directives, job name, output dir, shell conventions
+- Whether the workload uses `srun`, multiple Slurm steps, MPI, or other subprocess launchers. If so,
+  tell the user this snapshot may under-report the real workload and should not be used alone to
+  reduce resources.
 - Whether a usage-report block is already present (look for the `Self-contained cgroup-based
   usage report` marker, **or** the old `seff "$SLURM_JOB_ID"` pattern that this skill used to
   insert) — replace in place rather than appending a duplicate.
@@ -47,10 +49,11 @@ If neither is given, ask.
 
 Add the block **after** the main workload command, before any final `echo "End"` line if present.
 Keep the marker comment exactly as written so future runs of this skill find and update the block
-instead of duplicating it.
+instead of duplicating it. If the script uses `set -e`, explain that failures before this block may
+skip the snapshot unless the script adds an `EXIT` trap; do not silently promise failed-job reports.
 
 ```bash
-# ---- Self-contained cgroup-based usage report (do not depend on sacct finalize) ----
+# ---- Inline cgroup snapshot (CPU/memory only; not a seff replacement) ----
 REPORT_DIR="${SLURM_SUBMIT_DIR:-$PWD}/logs"
 mkdir -p "$REPORT_DIR"
 USAGE_REPORT="${REPORT_DIR}/${SLURM_JOB_NAME:-job}_${SLURM_JOB_ID}_usage.txt"
@@ -74,7 +77,7 @@ awk -v jid="$SLURM_JOB_ID" -v jname="${SLURM_JOB_NAME:-?}" \
 'function hms(s,    h,m,ss){ h=int(s/3600); m=int((s%3600)/60); ss=int(s%60);
   return sprintf("%02d:%02d:%02d", h, m, ss) }
  BEGIN{
-  print "Slurm job usage report (cgroup-direct, end-of-script)"
+  print "Slurm job usage snapshot (cgroup-direct, end-of-script)"
   printf "  Job ID    : %s\n  Job name  : %s\n  Host      : %s\n  Generated : %s\n\n", \
     jid, jname, host, gen
   print "== Resources requested =="
@@ -102,25 +105,28 @@ awk -v jid="$SLURM_JOB_ID" -v jname="${SLURM_JOB_NAME:-?}" \
     printf "  CPU Efficiency   : %.2f%% of %s core-walltime (wall * %s cpus)\n", eff, hms(cw), cpus
   }
   print ""
-  print "Note: cgroup numbers are kernel-direct (no sacct dependency). For finalized"
-  print "post-completion accounting including GPU efficiency, run after the job exits:"
+  print "Note: this is an inline cgroup snapshot, not a seff replacement. It may"
+  print "under-report srun/multi-step jobs. For finalized accounting including GPU"
+  print "efficiency, run after the job exits:"
   printf "  seff %s\n", jid
 }' > "$USAGE_REPORT"
 echo "Usage report -> $USAGE_REPORT"
-# ---- End usage report ----
+# ---- End cgroup snapshot ----
 ```
 
 ### 3. If the old `seff`-in-script block is found
 
 The previous version of this skill inserted `seff "$SLURM_JOB_ID"` in-script. That pattern is
 **broken** (sacct unfinalized while the job is still running). Replace any such block with the
-cgroup-based block above — do not leave both.
+cgroup snapshot block above — do not leave both. Tell the user this changes the report from
+final `seff` accounting to an inline CPU/memory snapshot.
 
 ### 4. Tell the user what changed
 
 - Which script was edited
 - The usage-report path (`logs/<job_name>_<jobid>_usage.txt`)
-- That **CPU + memory** are now kernel-direct (no sacct dependency) and accurate at end of script
+- That **CPU + memory** are read from the report block's cgroup without waiting for `sacct`
+- That `srun` / multi-step jobs may be under-reported by this inline snapshot
 - That **GPU efficiency** is not in this report — `seff <jobid>` after the job exits is the
   source for that (cgroup does not track GPU)
 
@@ -133,6 +139,12 @@ cgroup-based block above — do not leave both.
 
 ## Limitations
 
+- **Not a `seff` replacement.** Use this only as an immediate CPU/memory snapshot. Final resource
+  tuning should still use `seff <jobid>` after completion.
+- **`srun` / multi-step jobs can be under-reported.** The block reads its own shell's cgroup, not a
+  guaranteed aggregate of every Slurm step in the job.
+- **Failure paths may skip the block.** Scripts with `set -e` will not reach this block if the main
+  workload exits non-zero unless the script uses a trap.
 - **GPU efficiency** is not in this report — see the footer note that points the user to
   `seff <jobid>` after the job exits.
 - **Cgroup v1** systems (older Alliance clusters on EL7/CentOS 7) do not expose

@@ -58,7 +58,7 @@ Shared workflows include:
 - `onboard` - interactive setup helper.
 - `slurm-status` - check GPU/resource availability.
 - `slurm-job` - create or modify sbatch scripts.
-- `slurm-seff-report` - retrofit a job script to emit a post-job `seff` usage report.
+- `slurm-seff-report` - retrofit a job script to emit an inline cgroup CPU/memory snapshot; final `seff` after job exit remains authoritative.
 - `slurm-debug` - diagnose failed, killed, or pending jobs.
 - `submit-experiment` - submit documented Slurm experiments.
 - `harvest` - collect completed experiment results.
