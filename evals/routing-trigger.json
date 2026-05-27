@@ -13,6 +13,7 @@
     { "id": "P4", "category": "positive", "query": "write me an sbatch script for a single-GPU h100 fine-tune job with sensible defaults", "expect": "slurm-job" },
     { "id": "P5", "category": "positive", "query": "modify my existing training script to write an inline CPU and memory usage snapshot at the end", "expect": "slurm-seff-report" },
     { "id": "P5b", "category": "positive", "query": "I want to print seff at the end of my job script, but if that is unreliable add the right in-script usage snapshot instead", "expect": "slurm-seff-report", "expect_behavior": "Explain that in-script seff is not authoritative; add cgroup CPU/memory snapshot and tell user to run seff after job exit." },
+    { "id": "P5c", "category": "positive", "query": "my sbatch script uses srun torchrun; add resource monitoring without under-reporting the training step", "expect": "slurm-seff-report", "expect_behavior": "Detect the srun/multi-step shape. Do not add the simple end-of-script cgroup block as authoritative; choose step-aware instrumentation, GPU sampling, or final seff guidance." },
     { "id": "P6", "category": "positive", "query": "submit configs/lora_r16.yaml as a tracked experiment with full provenance", "expect": "submit-experiment" },
     { "id": "P7", "category": "positive", "query": "my slurm job 41290895 failed with exit code 1, help me figure out what happened", "expect": "slurm-debug" },
     { "id": "P8", "category": "positive", "query": "collect results from finished experiments and rebuild the docs index", "expect": "harvest" },

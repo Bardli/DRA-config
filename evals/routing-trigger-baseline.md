@@ -1,11 +1,12 @@
 # Routing-Trigger Eval — Baseline Run (2026-05-25)
 
-Eval set: `evals/routing-trigger.json` (18 cases). Run via a fresh `general-purpose` subagent
-that received only the 9 skill descriptions + the 18 queries, with strict instructions to route
+Eval set: `evals/routing-trigger.json` (20 cases after the 2026-05-27 seff wording update).
+Original baseline run used 18 cases via a fresh `general-purpose` subagent
+that received only the 9 skill descriptions + the queries, with strict instructions to route
 on description text alone. No tool execution. Method matches the official "Claude A writes for
 Claude B" pattern (`anthropic-best-practices.md` L758).
 
-## Score: 18/18 routed, 17 clean, 1 surfaces a real description gap
+## Score: original 18/18 routed, 17 clean, 1 surfaced a real description gap
 
 | Case | Query | Expected | Picked | Conf. | Verdict |
 |---|---|---|---|---|---|
@@ -14,7 +15,8 @@ Claude B" pattern (`anthropic-best-practices.md` L758).
 | P3 | what GPUs are currently free on fir | slurm-status | slurm-status | high | ✅ |
 | P4 | write sbatch for single-GPU h100 fine-tune | slurm-job | slurm-job | high | ✅ |
 | P5 | modify training script to write inline CPU/memory usage snapshot | slurm-seff-report | slurm-seff-report | high | ✅ |
-| P5b | print seff at end, or add reliable in-script snapshot | slurm-seff-report | slurm-seff-report | high | ✅ |
+| P5b | print seff at end, or add reliable in-script snapshot | slurm-seff-report | expected | n/a | added 2026-05-27 |
+| P5c | sbatch uses srun torchrun; add monitoring without under-reporting | slurm-seff-report | expected | n/a | added 2026-05-27 |
 | P6 | submit configs/lora_r16.yaml as tracked experiment | submit-experiment | submit-experiment | high | ✅ |
 | P7 | job 41290895 failed with exit code 1 | slurm-debug | slurm-debug | high | ✅ |
 | P8 | collect results from finished experiments | harvest | harvest | high | ✅ |

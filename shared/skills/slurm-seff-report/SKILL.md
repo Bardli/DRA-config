@@ -1,15 +1,14 @@
 ---
 name: slurm-seff-report
-description: Add an inline cgroup-v2 CPU/memory snapshot to a Slurm job script. This is not a seff replacement: it can match seff for direct batch-step workloads but can under-report srun or multi-step jobs, and it cannot report GPU efficiency. Use when the user wants an immediate in-script usage snapshot or asks to print seff at the end; explain that final seff after job exit remains authoritative.
+description: Add resource-monitoring guidance to a Slurm job script by choosing the right strategy for the job shape. Use a simple inline cgroup-v2 CPU/memory snapshot only for direct batch-step workloads; for srun, MPI/DDP, or multi-step jobs, warn that the simple snapshot can under-report and choose step-aware instrumentation, GPU sampling, or final seff instead. Use when the user wants in-script usage reporting or asks to print seff at the end.
 allowed-tools: Read, Edit, Write, Glob, Grep
 ---
 
-# Add an Inline Cgroup Snapshot
+# Add Slurm Resource Monitoring
 
-Modify the user's existing Slurm job script so it writes a per-job usage report
-(`logs/<job_name>_<jobid>_usage.txt`) at the **end** of the script, by reading the current
-cgroup-v2 accounting files directly. Treat this as an **inline CPU/memory snapshot**, not as a
-replacement for `seff`.
+Modify the user's existing Slurm job script so it gets the right level of resource monitoring for
+its shape. Do **not** blindly append one fixed block to every script. First classify how the job
+runs, then choose the least misleading monitoring pattern.
 
 ## What this is and is not
 
@@ -38,14 +37,31 @@ If neither is given, ask.
 ### 1. Inspect the script
 
 - `#SBATCH` directives, job name, output dir, shell conventions
-- Whether the workload uses `srun`, multiple Slurm steps, MPI, or other subprocess launchers. If so,
-  tell the user this snapshot may under-report the real workload and should not be used alone to
-  reduce resources.
+- How the main workload is launched:
+  - **Direct batch step**: `python train.py`, `bash run.sh`, `Rscript ...` directly in the sbatch
+    shell. The simple end-of-script cgroup snapshot is acceptable.
+  - **Separate Slurm step / multi-step**: `srun ...`, MPI, DDP/`torchrun` launched through `srun`,
+    repeated `srun preprocess/train/eval`, or multiple job phases. The simple end-of-script block
+    can under-report because it reads `step_batch`, not the workload step.
+  - **GPU job**: cgroup does not expose GPU efficiency. Add GPU sampling only if useful; final GPU
+    accounting still comes from post-completion `seff`/`sacct`.
 - Whether a usage-report block is already present (look for the `Self-contained cgroup-based
   usage report` marker, **or** the old `seff "$SLURM_JOB_ID"` pattern that this skill used to
   insert) — replace in place rather than appending a duplicate.
 
-### 2. Insert the report block at the end of the script
+### 2. Choose the monitoring strategy
+
+| Job shape | What to do |
+|---|---|
+| Direct batch-step workload | Insert the simple cgroup snapshot block below. It matched `seff` in live Fir tests for direct batch-step Python. |
+| `srun` / MPI / DDP / multi-step workload | Do **not** present the simple block as the job's true usage. Prefer step-aware instrumentation inside each `srun` step when you can do it safely; otherwise leave the script relying on final `seff`/`harvest` and tell the user why. |
+| GPU workload | Optionally add `nvidia-smi` sampling during the workload for a runtime GPU trace. Still tell the user final GPU efficiency comes from `seff <jobid>` after exit. |
+| Script uses `set -e` and failures matter | Add an `EXIT` trap only if it can be done without changing workload semantics. Otherwise say failed jobs may skip the inline snapshot. |
+
+When you choose not to insert the simple block, still help the user by adding a final comment or
+post-run instruction such as `seff <jobid>` / `/harvest` rather than adding a misleading report.
+
+### 3. Direct batch-step pattern
 
 Add the block **after** the main workload command, before any final `echo "End"` line if present.
 Keep the marker comment exactly as written so future runs of this skill find and update the block
@@ -114,26 +130,30 @@ echo "Usage report -> $USAGE_REPORT"
 # ---- End cgroup snapshot ----
 ```
 
-### 3. If the old `seff`-in-script block is found
+### 4. If the old `seff`-in-script block is found
 
 The previous version of this skill inserted `seff "$SLURM_JOB_ID"` in-script. That pattern is
-**broken** (sacct unfinalized while the job is still running). Replace any such block with the
-cgroup snapshot block above — do not leave both. Tell the user this changes the report from
-final `seff` accounting to an inline CPU/memory snapshot.
+**broken** (sacct unfinalized while the job is still running). Remove or replace any such block
+rather than leaving both. For direct batch-step scripts, replace it with the cgroup snapshot block
+above. For `srun` / multi-step scripts, replace it with the safer strategy selected in step 2 and
+tell the user why final `seff` remains the authoritative source.
 
-### 4. Tell the user what changed
+### 5. Tell the user what changed
 
 - Which script was edited
-- The usage-report path (`logs/<job_name>_<jobid>_usage.txt`)
+- Which job-shape strategy you selected and why
+- The usage-report path (`logs/<job_name>_<jobid>_usage.txt`) if a snapshot block was inserted
 - That **CPU + memory** are read from the report block's cgroup without waiting for `sacct`
-- That `srun` / multi-step jobs may be under-reported by this inline snapshot
-- That **GPU efficiency** is not in this report — `seff <jobid>` after the job exits is the
-  source for that (cgroup does not track GPU)
+- That `srun` / multi-step jobs may be under-reported unless you added step-aware instrumentation
+- That **GPU efficiency** is not provided by cgroup — `seff <jobid>` after the job exits is the
+  source for finalized accounting
 
 ## Editing Rules
 
 - Scope edits to the report block; do not refactor unrelated job logic.
 - Preserve existing comments and shell setup.
+- Do not wrap complex `srun`, MPI, or DDP commands unless the quoting and exit-status preservation
+  are straightforward. A correct final `seff` instruction is better than fragile instrumentation.
 - If the user pasted contents (not a path), return the full modified script.
 - If a file path was given, edit in place.
 
