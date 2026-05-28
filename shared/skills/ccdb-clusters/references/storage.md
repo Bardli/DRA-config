@@ -1,5 +1,18 @@
 # Storage on Alliance Canada
 
+## Contents
+
+- Three-tier filesystem (every cluster)
+- Cluster-specific quotas (selected)
+- Keep everything in `$SCRATCH`
+- Job-local fast disk: `$SLURM_TMPDIR`
+- Staging targets — what counts against which quota
+- Bulk staging recipe — many small files
+- I/O speedup expected from staging
+- When NOT to stage
+- Purge policies
+- Common gotchas
+
 ## Three-tier filesystem (every cluster)
 
 | Variable | Path pattern | Quota | Use for | Backup | Persistence |
@@ -73,6 +86,9 @@ machine-local, so:
 Pattern inside a job script:
 
 ```bash
+# Guard: on Fir (and any cluster where $SLURM_TMPDIR isn't auto-exported)
+# fall back to the per-job NVMe mount before using it.
+: "${SLURM_TMPDIR:=/localscratch/$USER.$SLURM_JOB_ID.0}"
 cp -r $SCRATCH/dataset $SLURM_TMPDIR/
 python train.py --data $SLURM_TMPDIR/dataset
 cp -r $SLURM_TMPDIR/results $SCRATCH/results_${SLURM_JOB_ID}/
@@ -139,7 +155,7 @@ STAGED_DATA="${LOCAL_SCRATCH}/<your_dataset>"
 mkdir -p "$STAGED_DATA"
 SECONDS=0
 ( cd "$SCRATCH/<repo>/data/<your_dataset>" \
-  && ls *.npz | xargs -P 8 -I {} cp {} "$STAGED_DATA/" )
+  && find . -maxdepth 1 -name "*.npz" -print0 | xargs -0 -P 8 -I {} cp {} "$STAGED_DATA/" )
 echo "Stage: ${SECONDS}s for $(du -sh "$STAGED_DATA" | cut -f1)"
 
 python train.py --data "$STAGED_DATA"

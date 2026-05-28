@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "created": "2026-05-25",
+  "purpose": "Trigger-routing baseline for DRA-config skill descriptions. Pure prompt routing — does the model pick the RIGHT skill from the descriptions alone, with no tool execution? Run by opening a fresh Claude/Codex session and pasting each query, or by feeding skill descriptions + queries to a subagent. Compare against the 'expect' field; investigate failures by tightening the responsible skill's description.",
+  "skills_under_test": [
+    "onboard", "connect", "harvest", "slurm-debug", "slurm-job",
+    "slurm-seff-report", "submit-experiment", "slurm-status", "ccdb-clusters"
+  ],
+  "cases": [
+    { "id": "P1", "category": "positive", "query": "first time configuring DRA-config on my laptop, walk me through the setup", "expect": "onboard" },
+    { "id": "P2", "category": "positive", "query": "I'm on a laptop and need to run sinfo on fir, set up the SSH path", "expect": "connect" },
+    { "id": "P3", "category": "positive", "query": "what GPUs are currently free on fir? I want to see live availability before submitting", "expect": "slurm-status" },
+    { "id": "P4", "category": "positive", "query": "write me an sbatch script for a single-GPU h100 fine-tune job with sensible defaults", "expect": "slurm-job" },
+    { "id": "P5", "category": "positive", "query": "modify my existing training script to write an inline CPU and memory usage snapshot at the end", "expect": "slurm-seff-report" },
+    { "id": "P5b", "category": "positive", "query": "I want to print seff at the end of my job script, but if that is unreliable add the right in-script usage snapshot instead", "expect": "slurm-seff-report", "expect_behavior": "Explain that in-script seff is not authoritative; add cgroup CPU/memory snapshot and tell user to run seff after job exit." },
+    { "id": "P5c", "category": "positive", "query": "my sbatch script uses srun torchrun; add resource monitoring without under-reporting the training step", "expect": "slurm-seff-report", "expect_behavior": "Detect the srun/multi-step shape. Do not add the simple end-of-script cgroup block as authoritative; choose step-aware instrumentation, GPU sampling, or final seff guidance." },
+    { "id": "P6", "category": "positive", "query": "submit configs/lora_r16.yaml as a tracked experiment with full provenance", "expect": "submit-experiment" },
+    { "id": "P7", "category": "positive", "query": "my slurm job 41290895 failed with exit code 1, help me figure out what happened", "expect": "slurm-debug" },
+    { "id": "P8", "category": "positive", "query": "collect results from finished experiments and rebuild the docs index", "expect": "harvest" },
+
+    { "id": "D1", "category": "disambiguation", "query": "/harvest --auto", "expect": "harvest", "expect_behavior": "do NOT prompt for confirmation; skip the gate" },
+    { "id": "D2", "category": "disambiguation", "query": "/harvest", "expect": "harvest", "expect_behavior": "ASK for confirmation before writing" },
+    { "id": "D3", "category": "disambiguation", "query": "I just registered my SSH key 5 minutes ago on the CCDB website and ssh still fails", "expect": "onboard", "rationale": "Propagation issue — onboard, not connect (the key/setup is fresh)" },
+    { "id": "D4", "category": "disambiguation", "query": "my 8-hour ControlMaster socket expired, get me reconnected to fir", "expect": "connect", "rationale": "Re-warm an existing setup — connect, not onboard" },
+    { "id": "D5", "category": "boundary", "query": "submit this script", "expect": null, "expect_behavior": "Ambiguous between slurm-job (write/refine the script) and submit-experiment (track + sbatch the experiment). Ideal: ask the user to disambiguate, or pick submit-experiment if the script is already complete." },
+    { "id": "D6", "category": "disambiguation", "query": "what GPU profile should I request given current cluster load", "expect": "slurm-status", "rationale": "Combines availability + advice on what to request → slurm-status (its description covers 'what the user can request right now')" },
+    { "id": "D7", "category": "disambiguation", "query": "I want to run a quick fine-tune as a one-off, not a tracked experiment", "expect": "slurm-job", "rationale": "User explicitly opts out of tracking → just generate the sbatch script" },
+
+    { "id": "N1", "category": "negative", "query": "write me a Python function to parse a CSV file", "expect": null, "expect_behavior": "No DRA skill should fire — this is a general Python task" },
+    { "id": "N2", "category": "negative", "query": "what is the capital of France", "expect": null, "expect_behavior": "No DRA skill should fire — out of scope" },
+    { "id": "N3", "category": "negative", "query": "review this code change for security issues", "expect": null, "expect_behavior": "No DRA skill should fire — that's a code-review task" }
+  ]
+}

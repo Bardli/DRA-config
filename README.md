@@ -23,7 +23,7 @@ Read ~/DRA-config/README.md and install the lab config for me.
 Configure Claude Code, Codex, or both depending on what is available.
 ```
 
-The assistant should inspect this repo, detect Great Lakes/Lighthouse, write saved setup values, and run `setup.sh`.
+The assistant should inspect this repo, detect the Alliance cluster (e.g. Fir), write saved setup values, and run `setup.sh`.
 
 ## Manual Setup
 
@@ -58,11 +58,11 @@ Shared workflows include:
 - `onboard` - interactive setup helper.
 - `slurm-status` - check GPU/resource availability.
 - `slurm-job` - create or modify sbatch scripts.
-- `slurm-seff-report` - retrofit a job script to emit a post-job `seff` usage report.
+- `slurm-seff-report` - retrofit a job script to emit an inline cgroup CPU/memory snapshot; final `seff` after job exit remains authoritative.
 - `slurm-debug` - diagnose failed, killed, or pending jobs.
 - `submit-experiment` - submit documented Slurm experiments.
 - `harvest` - collect completed experiment results.
-- `connect` - set up cross-cluster SSH.
+- `connect` - establish/verify key-based SSH access to the cluster (one-time key upload done by `onboard`).
 - `slurm-queue`, `slurm-resource`, `slurm-storage` - Claude agents converted into Codex skills where needed.
 
 Claude supports hooks/statusline directly. Codex does not, so login-node safety and tool usage rules are injected into
@@ -114,6 +114,37 @@ Why this shape:
 - Shared cluster/storage policy lives once, so Claude and Codex do not drift.
 - Tool-specific behavior stays in small adapter files.
 - The installer is slightly more compositional, but future tools can be added without duplicating all lab policy.
+
+## Skill Authoring
+
+Skills in this repo follow the Agent Skills conventions below. Apply them when adding or editing a
+skill (most map directly to the issues this bundle was hardened against):
+
+- **Progressive disclosure.** Keep `SKILL.md` lean — only the key path. The `name` + `description`
+  (~100 words) is always in context; the body loads when the skill triggers; put heavy reference
+  material (tables, long examples) in `references/` and executable logic in `scripts/`. Reference
+  bundled scripts via `${CLAUDE_SKILL_DIR}/scripts/...`, never relative paths.
+- **`description` = what + when.** Third person, stating both what the skill does and the trigger
+  conditions/keywords a user would say. Claude tends to *under*-trigger — be explicit about when
+  to use it.
+- **Single responsibility.** One skill, one job; keep the body well under 500 lines (split if it
+  grows). Prefer several small skills over one giant one.
+- **`allowed-tools` matches the body.** Grant exactly the commands the skill runs, in space-pattern
+  syntax (`Bash(sbatch *)`, not `Bash(sbatch:*)`); no over-broad grants.
+- **Single source of truth, not prose.** State-tracking workflows (e.g. `submit-experiment`,
+  `harvest`) keep a structured file (`metadata.yaml`) as the SSOT and derive human-readable views
+  from it — never parse markdown for state.
+- **Fail loud.** Helper scripts exit non-zero with a clear message on real errors; never emit
+  empty/partial output that silently breaks a downstream command.
+- **Test before shipping.** Validate a new or changed skill in a fresh session (ideally via a
+  subagent) against a couple of realistic prompts before relying on it.
+
+### References
+
+- **Anthropic (official):** [Agent Skills docs](https://docs.anthropic.com/en/docs/claude-code/skills)
+  · [`anthropics/skills`](https://github.com/anthropics/skills) (incl. `skill-creator`)
+- **Community:** [`mattpocock/skills`](https://github.com/mattpocock/skills) (`write-a-skill`)
+  · [`obra/superpowers`](https://github.com/obra/superpowers) (`writing-skills`)
 
 ## Contributing
 

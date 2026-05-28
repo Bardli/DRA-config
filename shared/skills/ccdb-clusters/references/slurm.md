@@ -4,6 +4,17 @@ These commands work on every Alliance cluster (Fir, Trillium, Cedar, Graham,
 Béluga, Narval, Niagara, Rorqual, Killarney). Cluster-specific partition
 names and wall-time limits live in `clusters/<cluster>.md`.
 
+## Contents
+
+- Check status
+- Submit jobs
+- Cancel jobs
+- View logs
+- Post-hoc efficiency
+- Resource selection cheat sheet (general — see per-cluster pages for specifics)
+- Partition / wall-time limits
+- Common gotchas
+
 ## Check status
 
 ```bash
@@ -81,7 +92,7 @@ Below those bars, you're burning shared LevelFS for your whole lab group.
 `sinfo -o "%P %l"` lists partitions and time limits on the current cluster.
 Patterns differ:
 
-- **Fir** uses `gpubase_bygpu_b<N>` (b1=3h, b2=6h, b3=12h, b4=1d, b5=3d, b6=7d) and SLURM picks the first that fits your `--time`.
+- **Fir** uses banded GPU partitions `gpubase_bygpu_b<N>` (per-GPU) and `gpubase_bynode_b<N>` (whole-node); SLURM auto-picks the smallest band that fits your `--time`. See `references/clusters/fir.md` for the current band wall-times (verify with `sinfo`) — they are not duplicated here.
 - **Cedar / Graham / Béluga / Narval** typically use generic CPU and GPU partitions selected by `--time` and `--gres`.
 - **Niagara** has `compute` (24h max), `debug` (1h, max 4 nodes), and `archive`.
 

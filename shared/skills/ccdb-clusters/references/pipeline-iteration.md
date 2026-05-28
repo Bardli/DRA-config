@@ -13,6 +13,15 @@ watchdogs) lives in a separate skill / repo:
 This page is the cluster-mechanics summary so you have the gist without
 loading the full experiment-workflow skill.
 
+## Contents
+
+- Phase 1 — Interactive smoke test
+- Phase 1 — Live resource verification (REQUIRED, second terminal)
+- Phase 1 — Train-set sanity inference (proves no train/infer skew)
+- Phase 1 → Phase 2 sizing handoff (derive sbatch flags from measurements)
+- Phase 2 — One-day full-dataset job (only after phase 1 clears all three bars)
+- Common failure modes (drawn from the experiment-workflow skill)
+
 ## Phase 1 — Interactive smoke test
 
 1. Request a **20–40 GB MIG / partial GPU** interactive allocation

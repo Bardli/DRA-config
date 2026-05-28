@@ -1,229 +1,104 @@
 ---
 name: connect
-description: Establish SSH access for cluster work. Supports Great Lakes <-> Lighthouse cross-cluster access and local machine -> Fir access.
-allowed-tools: Bash(ssh *), Bash(hostname *), Bash(whoami), Bash(cat *), Bash(ls *), Bash(mkdir *), Bash(chmod *), Bash(test *), Bash(grep *), Bash(which *), Bash(sinfo *), Bash(~/.local/bin/ssh-*), Read, Edit, Write
+description: Decide whether cluster work runs locally or over SSH, and establish/verify the SSH path to an Alliance Canada cluster (Fir). Assumes the one-time key setup was done by /onboard. Use when you need to run Slurm commands but may be on a laptop.
+allowed-tools: Bash(ssh *), Bash(hostname *), Bash(whoami), Bash(grep *), Bash(test *), Bash(ls *), Bash(sinfo *), Bash(${CLAUDE_SKILL_DIR}/scripts/*), Read
 ---
 
-# SSH Connect
+# SSH Connect (Alliance Canada)
 
-Use this skill to decide whether cluster work should run locally on the current host or remotely over SSH, and to establish the needed SSH path when it is remote.
+Decide whether cluster work should run locally on this host or remotely over SSH, and make sure
+the SSH path is live. The **one-time** key setup (generate key, upload the public key to CCDB,
+write `~/.ssh/config`) is done by the `onboard` skill — this skill only **reuses** it and never
+re-uploads anything.
 
 ## Step 1: Detect the current environment
 
-Run:
-
 ```bash
 hostname -f
 whoami
 ```
 
-Interpret the result as follows:
-
-- If hostname contains `greatlakes` or `gl-login`:
-  - current cluster = **Great Lakes**
-  - remote cluster = **Lighthouse**
-  - remote alias = `lighthouse`
-  - remote hostname = `lighthouse.arc-ts.umich.edu`
-  - expect script = `~/.local/bin/ssh-lh-auto`
-- If hostname contains `lighthouse` or `lh-login`:
-  - current cluster = **Lighthouse**
-  - remote cluster = **Great Lakes**
-  - remote alias = `greatlakes`
-  - remote hostname = `greatlakes.arc-ts.umich.edu`
-  - expect script = `~/.local/bin/ssh-gl-auto`
-- If hostname contains `fir.alliancecan.ca` or starts with `fir`:
-  - current cluster = **Fir**
-  - operate **locally** on this login node
-  - do not try to SSH to Fir again
-- Otherwise:
-  - treat the machine as a **local machine / laptop**
-  - for Fir work, operate **remotely** using:
-    ```bash
-    ssh -i ~/.ssh/id_rsa -Y ${USER}@fir.alliancecan.ca
-    ```
-
-## Step 2: Decide local vs remote execution
-
-Use this rule consistently:
-
-- If already on the relevant cluster login node, operate **locally** there.
-- If on a local machine or laptop and the target cluster is Fir, operate **remotely** by wrapping cluster commands in:
+- If the hostname ends in `.alliancecan.ca` (e.g. `fir.alliancecan.ca` — a login node), you are
+  **on the cluster**. Run Slurm commands **locally** here; do a quick check and stop:
   ```bash
-  ssh -i ~/.ssh/id_rsa -Y ${USER}@fir.alliancecan.ca "<command>"
+  hostname -f && whoami && sinfo --version 2>&1
   ```
-- If on Great Lakes and the target is Lighthouse, or vice versa, operate **remotely** using the existing SSH multiplexed path described below.
+- Otherwise treat this as a **local machine / laptop**: Fir work runs **remotely** (Step 2).
 
-If the current host is already Fir, stop after a quick connectivity test:
+## Step 2: Establish / verify the remote path (local machine -> Fir)
 
-```bash
-hostname -f
-whoami
-sinfo --version 2>&1
-```
-
-Report that cluster commands should run locally on Fir.
-
-## Step 3: Great Lakes <-> Lighthouse setup
-
-Only use this section when the current host is Great Lakes or Lighthouse.
-
-### 3.1 Check prerequisites
+Access is key-based through the `fir.alliancecan.ca` host in `~/.ssh/config`. Confirm it exists:
 
 ```bash
-test -x ~/.local/bin/ssh-<remote-short>-auto && echo "script OK" || echo "script MISSING"
-test -f ~/.env && grep -q '^SSH_UMICH_PASS=' ~/.env && grep -q '^SSH_DUO_OPTION=' ~/.env && echo "credentials OK" || echo "credentials MISSING"
-grep -q "^Host[[:space:]]\\+<remote-alias>\\>" ~/.ssh/config 2>/dev/null && echo "ssh config OK" || echo "ssh config MISSING"
-which expect 2>/dev/null && echo "expect OK" || echo "expect MISSING"
+grep -qE "^Host[[:space:]]+fir.alliancecan.ca" ~/.ssh/config && echo "host OK" || echo "host MISSING"
 ```
 
-If all are present, skip to Step 3.4.
+**If MISSING** → the one-time setup hasn't been done. Stop and tell the user to run `/onboard`
+(generates/uploads the key, writes the host entry). Don't generate keys or collect passwords/Duo here.
 
-### 3.2 Credentials
-
-If `~/.env` is missing `SSH_UMICH_PASS` or `SSH_DUO_OPTION`, tell the user to create it themselves. Do not handle their password directly.
-
-Recommended contents:
+**If host OK**, check the ControlMaster socket — this is the key step. Fir requires **Duo 2FA on
+every fresh login**, so the agent can only connect when a warm socket already exists:
 
 ```bash
-SSH_UMICH_PASS="your_password_here"
-SSH_DUO_OPTION="1"
+ssh -O check fir.alliancecan.ca 2>&1   # "Master running (pid=...)" = socket live
 ```
 
-Then:
+- **Socket live** → reuse it directly (no prompt):
+  ```bash
+  ssh fir.alliancecan.ca "hostname -f && whoami && sinfo --version 2>&1"
+  ```
+- **No master / socket expired** (ControlPersist elapsed, or first connect this session) → the
+  agent has no tty for the passphrase/Duo, so default to **Mode B** (agent-driven): bring the
+  socket up yourself and have the user approve the Duo push on their phone. Tell the user a push
+  is coming, then run:
+  ```bash
+  ${CLAUDE_SKILL_DIR}/scripts/warm-socket.sh fir.alliancecan.ca
+  ```
+  The script is **fail-loud**: it only succeeds once the master socket truly exists. If it exits
+  non-zero (the key needs a passphrase not in `ssh-agent`, or Duo timed out), fall back to
+  **Mode A** — have the user run it themselves; in Claude Code:
+  ```
+  ! ssh fir.alliancecan.ca "hostname -f && whoami"
+  ```
+  Either way the 8h socket then lets the agent reuse the connection. This is **not** an onboarding
+  failure — only send the user to `/onboard` if the host entry is MISSING or the key itself is
+  rejected (`Permission denied (publickey)` **before** any Duo prompt). For key/format problems
+  see the onboard skill's `references/fir-ssh-setup.md`.
+
+Once the socket is live, run all Fir Slurm control, file inspection, and submissions remotely:
 
 ```bash
-chmod 600 ~/.env
+ssh fir.alliancecan.ca "<command>"
 ```
-
-### 3.3 SSH config and helper script
-
-Ensure:
-
-```bash
-mkdir -p ~/.local/bin ~/.ssh
-chmod 700 ~/.ssh
-```
-
-If needed, add the host entry:
-
-**Great Lakes**
-```text
-Host greatlakes
-    HostName greatlakes.arc-ts.umich.edu
-    User <username>
-    ControlMaster auto
-    ControlPath ~/.ssh/%r@%h:%p
-    ControlPersist 86400
-```
-
-**Lighthouse**
-```text
-Host lighthouse
-    HostName lighthouse.arc-ts.umich.edu
-    User <username>
-    ControlMaster auto
-    ControlPath ~/.ssh/%r@%h:%p
-    ControlPersist 86400
-```
-
-Then create the appropriate `expect` helper:
-
-- `~/.local/bin/ssh-lh-auto` when going Great Lakes -> Lighthouse
-- `~/.local/bin/ssh-gl-auto` when going Lighthouse -> Great Lakes
-
-Use the existing repo convention: the helper should read `SSH_UMICH_PASS` and `SSH_DUO_OPTION` from `~/.env`, spawn `ssh -fN <remote-alias>`, answer the password prompt, and then send the Duo option.
-
-Make it executable:
-
-```bash
-chmod +x ~/.local/bin/ssh-<remote-short>-auto
-```
-
-### 3.4 Establish and verify the connection
-
-Check:
-
-```bash
-ssh -O check <remote-alias> 2>&1
-```
-
-If not already active, run:
-
-```bash
-~/.local/bin/ssh-<remote-short>-auto
-```
-
-Then verify:
-
-```bash
-ssh -O check <remote-alias> 2>&1
-ssh <remote-alias> "hostname -f && whoami"
-ssh <remote-alias> "sinfo --version 2>&1"
-```
-
-## Step 4: Local machine / laptop -> Fir
-
-Only use this section when the current hostname does not look like Great Lakes, Lighthouse, or Fir.
-
-### 4.1 Check prerequisites
-
-```bash
-test -f ~/.ssh/id_rsa && echo "ssh key OK" || echo "ssh key MISSING"
-which ssh 2>/dev/null && echo "ssh OK" || echo "ssh MISSING"
-```
-
-If `~/.ssh/id_rsa` is missing, stop and ask the user to provide the correct SSH identity first.
-
-### 4.2 Ask for the Duo passcode before the first remote action
-
-Before any Fir login or remote Fir command, ask the user for their DUO passcode. Tell them the connection flow may prompt for it interactively.
-
-### 4.3 Connectivity test
-
-Use the exact Fir login path:
-
-```bash
-ssh -i ~/.ssh/id_rsa -Y ${USER}@fir.alliancecan.ca "hostname -f && whoami && sinfo --version 2>&1"
-```
-
-If this succeeds, remote Fir operations can use the same pattern:
-
-```bash
-ssh -i ~/.ssh/id_rsa -Y ${USER}@fir.alliancecan.ca "<command>"
-```
-
-When the user is on a local machine, all Fir-specific Slurm control commands, file inspection, and submissions should be executed this way instead of being run locally.
 
 ## Wrap up
 
-Summarize the result in one of these forms:
+Summarize in one of these forms:
 
-### Already on target cluster
-
+### On the cluster
 ```text
 ## Fir: Operate Locally
-
 - [x] Current host is the Fir login node
-- [x] Slurm commands should run locally here
+- [x] Slurm commands run locally here
 ```
 
 ### Remote path established
-
 ```text
 ## Local Machine -> Fir: Connected
-
-- [x] SSH key available
-- [x] Remote shell: OK
-- [x] Remote Slurm: available
-- [x] Fir commands should be wrapped in ssh
+- [x] Key-based SSH via ~/.ssh/config
+- [x] Remote shell + Slurm: OK
+- [x] Fir commands wrapped in ssh
 ```
 
-### Cross-cluster socket established
-
+### Socket cold (already onboarded, just needs re-login)
 ```text
-## Great Lakes <-> Lighthouse: Connected
+## Local Machine -> Fir: Re-warm needed
+- [ ] ControlMaster socket expired — ran warm-socket.sh (Mode B); user approved the Duo push
+- [x] Key + ~/.ssh/config already set up (no /onboard needed)
+```
 
-- [x] SSH socket: active
-- [x] Remote shell: OK
-- [x] Remote Slurm: available
+### Not set up yet
+```text
+## Local Machine -> Fir: Needs onboarding
+- [ ] No ~/.ssh/config host entry, or key rejected — run /onboard first (one-time key upload to CCDB)
 ```

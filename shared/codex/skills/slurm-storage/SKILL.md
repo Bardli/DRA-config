@@ -1,17 +1,16 @@
 ---
 name: slurm-storage
-description: Scan home/scratch usage on an Alliance Canada cluster, find large files, and suggest what to move to $PROJECT or $SCRATCH to stay within quota. Use proactively when the user asks about disk space, quota, or storage.
-tools: Bash, Read, Glob, Grep
-model: haiku
+description: Scan $HOME/$SCRATCH usage on an Alliance Canada cluster, find large files, and suggest what to move to $PROJECT or $SCRATCH to stay within quota. Use when the user asks about disk space, quota, or storage.
+allowed-tools: Bash(diskusage_report *), Bash(df *), Bash(du *), Bash(find *), Bash(ls *), Read, Glob, Grep
 ---
 
 # Storage Scan (Alliance Canada)
 
-`$HOME` has a small fixed quota on every Alliance cluster (e.g. ~50 GB on Fir). This agent finds
+`$HOME` has a small fixed quota on every Alliance cluster (e.g. ~50 GB on Fir). This skill finds
 what is consuming space and recommends moving it to `$PROJECT` (durable, backed up) or `$SCRATCH`
 (large, purged after ~60 days of inactivity).
 
-### 1. Quota
+## 1. Quota
 
 ```bash
 diskusage_report 2>/dev/null || df -h "$HOME" "${SCRATCH:-}" "${PROJECT:-}" 2>/dev/null
@@ -19,13 +18,13 @@ diskusage_report 2>/dev/null || df -h "$HOME" "${SCRATCH:-}" "${PROJECT:-}" 2>/d
 
 Flag `$HOME` above 70% (warning) / 90% (critical).
 
-### 2. Largest directories in $HOME
+## 2. Largest directories in $HOME
 
 ```bash
 du -h --max-depth=2 "$HOME" 2>/dev/null | sort -rh | head -30
 ```
 
-### 3. Common offenders that belong on $PROJECT / $SCRATCH
+## 3. Common offenders that belong on $PROJECT / $SCRATCH
 
 ```bash
 du -sh ~/.conda ~/.cache/pip ~/.cache/huggingface ~/.cache/torch ~/wandb 2>/dev/null
@@ -34,7 +33,7 @@ find "$HOME" -maxdepth 4 -type f \( -name "*.pt" -o -name "*.pth" -o -name "*.ck
   -exec ls -lh {} \; 2>/dev/null | head -20
 ```
 
-### 4. Report and recommendations
+## 4. Report + recommendations
 
 Present a table of top consumers with a recommendation each. Use the user's real `$PROJECT` /
 `$SCRATCH` paths. Common advice:
@@ -52,5 +51,5 @@ Present a table of top consumers with a recommendation each. Use the user's real
 **Quick wins**: `pip cache purge`, `conda clean --all`, stale `.out` / `.log` files, archives
 already extracted.
 
-**Important**: never delete anything automatically — only suggest commands and let the user
-decide. Warn about anything that may be in active use.
+**Never delete anything automatically** — only suggest commands and let the user decide. Warn
+about anything that may be in active use.

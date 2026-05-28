@@ -1,165 +1,172 @@
 ---
 name: onboard
-description: Onboard a new lab member onto the shared Claude Code configuration. Detects clusters, collects Slurm account details, runs setup, and helps customize personal config.
-allowed-tools: Bash(git *), Bash(hostname *), Bash(sinfo *), Bash(sacctmgr *), Bash(whoami), Bash(which *), Bash(cat *), Bash(ls *), Bash(mkdir *), Bash(*/setup.sh *), Read, Edit, Write
+description: One-time setup to get a lab member onto Alliance Canada (DRAC) with this shared Claude Code config. Sets up key-based SSH with ControlMaster reuse (one interactive Duo login, then passwordless), detects the Slurm allocation account, writes saved values, and runs setup.sh. Use when first configuring a machine.
+allowed-tools: Bash(git *), Bash(hostname *), Bash(whoami), Bash(which *), Bash(cat *), Bash(ls *), Bash(mkdir *), Bash(chmod *), Bash(ssh-keygen *), Bash(ssh *), Bash(sinfo *), Bash(sshare *), Bash(sacctmgr *), Bash(*/setup.sh *), Bash(${CLAUDE_SKILL_DIR}/scripts/*), Read, Edit, Write
 ---
 
-# Lab Claude Code Setup — Onboarding
+# Alliance Canada Setup — Onboarding (one-time)
 
-You are helping a new lab member set up the shared Claude Code configuration. Walk them through this interactively. Be friendly, welcoming, and concise.
+You are helping a lab member do the **one-time** setup that connects this Claude Code
+config to an Alliance Canada (DRAC / CCDB) cluster — Fir by default. Walk them through it
+interactively; be concise. Greet with **"Welcome onboard, Foreseer!"** then explain: this
+sets up key-based SSH with ControlMaster reuse (one interactive Duo login, then passwordless),
+records the user's Slurm allocation account, and installs the lab config so Claude understands
+the cluster.
 
-Start with a greeting like: **"Welcome onboard, Foreseer!"** followed by a brief explanation of what this setup does: it connects Claude Code to the lab's shared configuration so Claude understands the cluster environment, knows what GPUs are available, and can help submit jobs correctly.
+Two things are distinct and both needed: **(A) SSH login access** (username + a registered
+SSH key) and **(B) a Slurm allocation account** (the `--account=` value, e.g. `def-<pi>_gpu`).
 
-## Pre-flight checks
+## Pre-flight
 
-1. Check if `~/.claude/` exists. If not, tell the user to run `claude` once first and come back.
-
-2. Check if the lab config repo is already cloned at `~/lab-claude-config/`. If not found, tell the user to clone it first:
+1. `ls -ld ~/.claude 2>/dev/null` — if missing, ask the user to run `claude` once first.
+2. Confirm the repo is cloned: `ls -d ~/DRA-config 2>/dev/null`. If not:
+   ```bash
+   git clone https://github.com/ATATC/DRA-config.git ~/DRA-config
    ```
-   git clone https://github.com/umich-foreseer/lab-claude-config.git ~/lab-claude-config
+3. `which jq` — needed for Claude's statusline.
+
+## Step A — SSH access (one-time; skip if already on a cluster login node)
+
+If `hostname -f` already ends in `.alliancecan.ca`, you are on the cluster — skip to Step B.
+Otherwise set up key-based access from this local machine. **Done once per machine** — `connect`
+reuses it afterward and never re-uploads.
+
+**Read first — the agent cannot log in for the user.** Fir requires **Duo 2FA on every fresh
+login, even with a registered key** (the key is only factor 1). The agent has no tty / no
+ssh-askpass, so the **user** runs the interactive login; the agent only writes files and reuses
+the connection afterward. Full detail (existing/encrypted keys, key-format conversion, Windows,
+agent-driven Mode B, troubleshooting) is in `references/fir-ssh-setup.md` — read it if anything
+below fails.
+
+1. **Find or create a key.** Check for an existing one first (the user may already have a key in
+   any format — see the reference):
+   ```bash
+   ls ~/.ssh/*.pub 2>/dev/null
    ```
-   Then come back and run `/onboard` again.
+   If none, create one:
+   ```bash
+   ssh-keygen -t ed25519 -C "<user-email-or-label>" -f ~/.ssh/id_ed25519
+   ```
+2. **Register the PUBLIC key with CCDB** (one-time MFA on the website):
+   ```bash
+   cat ~/.ssh/id_ed25519.pub   # or the user's existing <key>.pub
+   ```
+   Have the user paste that line at <https://ccdb.alliancecan.ca/ssh_authorized_keys>
+   (CCDB → Manage SSH Keys). **Propagation takes ~10–30 min** — failing right after upload is
+   normal. Never handle the user's password or Duo passcode in chat.
+3. **Add a `~/.ssh/config` host entry** (ask for the Alliance username if it differs from local
+   `whoami`; use the user's key path if not `id_ed25519`):
+   ```text
+   Host fir.alliancecan.ca
+       User <ccdb_username>
+       IdentityFile ~/.ssh/id_ed25519
+       IdentitiesOnly yes
+       AddKeysToAgent yes
+       ServerAliveInterval 60
+       ControlMaster auto
+       ControlPath ~/.ssh/cm-%r@%h:%p
+       ControlPersist 8h
+   ```
+   ControlMaster is **essential, not optional**: it is the only path to passwordless reuse, because
+   Duo is required on every fresh login. (Windows has no multiplexing — see the reference.)
+   ```bash
+   chmod 600 ~/.ssh/config
+   ```
+4. **First connection — default Mode B.** Run `/connect`: the agent brings up the ControlMaster
+   socket itself and you just approve the Duo push on your phone (the 8h socket then makes reuse
+   passwordless). If the key has a passphrase not in `ssh-agent`, `/connect` is fail-loud and falls
+   back to **Mode A** — you run the login yourself; in Claude Code:
+   ```
+   ! ssh fir.alliancecan.ca "hostname -f && whoami"
+   ```
+   (enter the passphrase, pick `1` at the Duo menu, approve the push).
+5. **Verify (agent).** Once the user reports success, reuse the socket:
+   ```bash
+   ssh -O check fir.alliancecan.ca          # "Master running" = socket live
+   ssh fir.alliancecan.ca "hostname -f && whoami"
+   ```
+   - `Permission denied (publickey)` **before** any Duo prompt = real key problem (not propagated,
+     or local/CCDB keys not a pair) → see the reference's troubleshooting.
+   - Reaching the Duo prompt = the key works; that's normal 2FA — have the user complete it in their
+     Mode A login above, not a failure to debug.
 
-3. Verify `jq` is available (`which jq`). If missing, suggest `module load jq` or installing it.
+## Step B — Detect the Slurm allocation account
 
-## Detect cluster and accounts
+**Prerequisite:** Step A's verify must have succeeded (`hostname`+`whoami` returned / socket live).
+If it didn't — `Permission denied (publickey)` (key still propagating, ~10–30 min) or the Duo
+login isn't done — **finish Step A first**; do not run the queries below against a connection that
+isn't up (you'll get a confusing error instead of the clear Step A diagnosis).
 
-Do this proactively — don't ask the user to look things up. Run the commands yourself and present what you found.
-
-### 1. Detect username
+Run on the cluster (directly if on a login node, else over the SSH from Step A). Don't make the
+user look things up — run it yourself:
 
 ```bash
-whoami
+ssh fir.alliancecan.ca "whoami; sshare -U -l --parsable2 | head"
 ```
 
-### 2. Detect which cluster(s)
+Pick the best GPU account with the bundled helper (ranks by FairShare, prefers RRG/RPP):
 
-Check hostname and available partitions:
 ```bash
-hostname -f
-sinfo -o "%12P %16G" --noheader 2>/dev/null | head -20
+ssh fir.alliancecan.ca "bash -s" < ${CLAUDE_SKILL_DIR}/../ccdb-clusters/scripts/pick-gpu-account.sh
 ```
 
-- If `spgpu2` partition exists → Great Lakes
-- If hostname contains `lighthouse` or `lh-login` → Lighthouse
-- If unclear, ask the user
+(or run `pick-gpu-account.sh` directly when on the cluster). Alliance accounts look like
+`def-<pi>_gpu`, `rrg-<pi>_gpu` (RAC-allocated), `rpp-<pi>`. Use `def-<pi>_cpu` for CPU jobs.
 
-### 3. Look up Slurm accounts
+## Step C — Confirm and save
 
-First, get account names and QOS:
+Show a short, plain-language summary: username, cluster (Fir), and the GPU account you'll
+record. After the user confirms, write `~/DRA-config/build/.env.local` with the Fir values:
+
 ```bash
-sacctmgr show association user=$(whoami) format=account%20,partition%20,qos%40 --noheader 2>/dev/null
-```
-
-Then, look up the group memory cap for the owned account separately:
-```bash
-sacctmgr show association account=<owned_account> format=account%20,grptres%40 --noheader 2>/dev/null | head -5
-```
-
-Use this reference table to match `sacctmgr` output to the correct account-partition-GPU mapping. **Each account belongs to a specific cluster. Only present accounts for the current cluster (detected in step 2). Ignore accounts for other clusters.**
-
-| Account | Cluster | Partition(s) | GPUs | Billing |
-|---|---|---|---|---|
-| `qdj_project_owned1` | Great Lakes | spgpu2 | Up to 10 L40S (48G) | Prepaid (shared dynamic quota) |
-| `qmei0` | Great Lakes | gpu, gpu-rtx6000, standard | V100, RTX Pro 6000 Blackwell | Prepaid (shared dynamic quota) |
-| `qmei3` | Great Lakes | gpu, gpu-rtx6000, standard | V100, RTX Pro 6000 Blackwell | Pay-as-you-go |
-| `qmei` | Lighthouse | qmei-a100 | 4x A100 (80G) | Dedicated |
-
-From the `sacctmgr` output, filter to only accounts for the **current cluster** using the table above, then identify:
-
-**On Great Lakes:**
-- **Owned account**: `qdj_project_owned1` (has `arph` QOS) — for L40S GPUs on spgpu2
-- **General account (prepaid)**: `qmei0` — for V100/RTX Pro 6000 Blackwell on gpu/gpu-rtx6000/standard
-- **General account (pay-as-you-go)**: `qmei3` — same partitions, used when prepaid budget is exhausted
-- **Memory cap**: check the `grptres` column for `mem=...G`, or default to 620 GB
-
-**On Lighthouse:**
-- **Lighthouse account**: `qmei` — for A100 GPUs on qmei-a100 partition
-
-### 4. Present findings and confirm
-
-**Only present accounts and partitions for the current cluster** (detected in step 2). Do not mention accounts or partitions on other clusters — the user is onboarding to the cluster they are logged into now.
-
-Show the user what you found in a clear, beginner-friendly summary. Avoid jargon where possible and briefly explain what each item means.
-
-Example for a user on **Lighthouse**:
-
-> Here's what I detected for your Lighthouse setup:
->
-> - **Username**: `jsmith`
-> - **Lighthouse account**: `qmei` — 4x A100 GPUs (80 GB VRAM each) on the dedicated `qmei-a100` partition
->
-> Does this look right?
-
-Example for a user on **Great Lakes**:
-
-> Here's what I detected for your Great Lakes setup:
->
-> - **Username**: `jsmith`
-> - **L40S account**: `qdj_project_owned1` — our lab's dedicated L40S GPUs (48 GB VRAM each) on `spgpu2`
-> - **General account**: `qmei0` — for V100 / RTX Pro 6000 Blackwell on `gpu`, `gpu-rtx6000`, `standard`
-> - **Group memory cap**: 620 GB — total memory our lab can use simultaneously on L40S nodes
->
-> Does this look right?
-
-Use the reference table above to auto-fill account, partition, and GPU values. Only ask the user if their `sacctmgr` output contains accounts not listed in the reference table.
-
-## Run setup
-
-Once you have all values, write them to `~/lab-claude-config/build/.env.local`. **Only include variables for the detected cluster** (the one the user is currently on):
-
-For **Lighthouse**:
-```
 # Lab Claude Config - saved template variables
-LH_USERNAME=<value>
-LH_ACCOUNT=<value>
-LH_GPU_COUNT=<value>
-LH_GPU_TYPE=<value>
+FIR_USERNAME=<ccdb_username>
+FIR_ACCOUNT=<def-or-rrg account>
+FIR_GPU_TYPE=h100
 ```
 
-For **Great Lakes**:
-```
-# Lab Claude Config - saved template variables
-GL_USERNAME=<value>
-GL_ACCOUNT_OWNED=<value>
-GL_ACCOUNT_GENERAL=<value>
-GL_MEMORY_CAP=<value>
-```
+## Step D — Run setup
 
-Then run:
 ```bash
-cd ~/lab-claude-config && ./setup.sh --modules <modules> --non-interactive
+cd ~/DRA-config && ./setup.sh --modules fir --non-interactive
 ```
 
-Where `<modules>` is `greatlakes`, `lighthouse`, or `greatlakes,lighthouse`.
+(Add `--targets claude,codex` if configuring Codex too.)
+
+## Step E — Smoke test (verify the install routes correctly)
+
+Run the routing-trigger eval as a final check that the bundle installed cleanly and the skill
+descriptions route as expected. Catches broken symlinks, missing skills, or a description
+regression **before** it bites a real workflow.
+
+1. **Locate the eval:** `~/DRA-config/evals/routing-trigger.json` (18 cases: positive,
+   disambiguation/boundary, negative).
+2. **Dispatch a fresh `general-purpose` subagent** with (a) the 9 installed skill descriptions
+   (`head ~/.claude/skills/*/SKILL.md` or equivalent) and (b) the 18 queries. Instruct it to
+   route each case and return strict JSON (`id`, `picked_skill`, `confidence`, `why`,
+   `runner_up`). No tool execution — paper routing only.
+3. **Score** each `picked_skill` against `expect`. Baseline (in
+   `~/DRA-config/evals/routing-trigger-baseline.md`) was **18/18 routed, 17 clean** with one
+   boundary case (D5) noted there.
+4. **Report:**
+   - All clear → install verified, hand off to the user.
+   - Failures → name each failed case + the skill whose description likely needs tightening;
+     suggest re-running after the fix.
+
+Skippable if the user wants to start immediately — they can rerun the eval anytime against the
+installed bundle.
 
 ## Post-setup
 
-After setup completes:
-
-1. Show the user what was installed — read and summarize `~/.claude/CLAUDE.md` briefly.
-
-2. Ask if they want to add anything personal to their CLAUDE.md. Examples:
-   - Their turbo storage path (e.g., `/nfs/turbo/si-qmei/<username>/`)
-   - Projects they're currently working on
-   - Language/framework preferences
-   - Any personal coding conventions
-
-   If they do, append their content **below** the `<!-- END: lab-config -->` marker in `~/.claude/CLAUDE.md`.
-
-3. Ask if they want to customize `~/.claude/settings.local.json`:
-   - Default HPC permissions (git, sbatch, python, etc.) are already included in the shared config
-   - This file is for *extra* personal permissions beyond the lab defaults (e.g., `Bash(docker *)`)
-   - After editing, re-run `./setup.sh` to apply changes
-
-4. Remind them:
-   - To update: `cd ~/lab-claude-config && git pull && ./setup.sh`
-   - Their personal content in CLAUDE.md (outside the markers) is never touched by setup.sh
-   - `/slurm-status` is now available for checking cluster status
-   - Run `/connect` to set up cross-cluster SSH if you use both Great Lakes and Lighthouse
+1. Read and briefly summarize `~/.claude/CLAUDE.md` so the user sees what was installed.
+2. Ask if they want personal notes appended **below** the `<!-- END: lab-config -->` marker
+   (e.g. project paths, framework preferences). Their content outside the markers is never
+   touched by `setup.sh`.
+3. Mention: `/slurm-status` checks cluster availability; `/connect` re-establishes the SSH
+   path in later sessions (no re-upload needed); update with
+   `cd ~/DRA-config && git pull && ./setup.sh --modules fir`.
 
 ## If setup fails
 
-- If `setup.sh` errors, read the error output and help debug.
-- Common issues: missing `jq`, wrong account names, `~/.claude/` doesn't exist.
-- The user can always re-run `./setup.sh` — it's idempotent.
+Read the error and help debug. Common issues: missing `jq`, key not yet propagated, wrong
+account name, `~/.claude` missing. `setup.sh` is idempotent — safe to re-run.

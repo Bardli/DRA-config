@@ -3,6 +3,19 @@
 > Sourced from live Fir session (2026-05) + Alliance wiki mirror oldid=164899 (June 2025).
 > Status: **Operational.** `$CC_CLUSTER=fir`, `$CC_RESTRICTED=true`.
 
+## Contents
+
+- At a glance
+- Hardware
+- GPU sizing — MIG slice names
+- Storage
+- Fir-specific quirks
+- Partitions and wall-time
+- TRES weights (observed 2026-04, partition `gpubase_bygpu_b1`)
+- Daily cost (12h, requested vs used)
+- Account selection — RRG first, then default
+- Common pitfalls on Fir
+
 ## At a glance
 
 | Item | Value |
@@ -28,9 +41,9 @@ partitioned into smaller virtual GPUs.
 
 | Slice | VRAM | `--gpus-per-node=` value | Break-even CPUs | Break-even Mem |
 |---|---|---|---|---|
-| 1g.10gb | 10 GB | `h100_1g.10gb:1` | 1 | ~41 GB |
-| 2g.20gb | 20 GB | `h100_2g.20gb:1` | 3 | ~82 GB |
-| 3g.40gb | 40 GB | `h100_3g.40gb:1` | 5 | ~123 GB |
+| 1g.10gb | 10 GB | `nvidia_h100_80gb_hbm3_1g.10gb:1` | 1 | ~41 GB |
+| 2g.20gb | 20 GB | `nvidia_h100_80gb_hbm3_2g.20gb:1` | 3 | ~82 GB |
+| 3g.40gb | 40 GB | `nvidia_h100_80gb_hbm3_3g.40gb:1` | 5 | ~123 GB |
 | Full H100 | 80 GB | `h100:1` (or `h100:4` for whole node) | 12 | ~288 GB |
 
 **Default to 20 GB or 40 GB** — full 80 GB is for genuine VRAM hogs or 1-day jobs.
@@ -90,23 +103,33 @@ node-pool rebalancing.
 
 ## Partitions and wall-time
 
-Fir uses banded partitions where SLURM picks the smallest band that fits
-your `--time` request:
+Fir has two banded GPU partition families; SLURM auto-picks the smallest band
+that fits your `--time` (you normally do **not** set `--partition` yourself):
 
-| Partition | Wall-time | Notes |
-|---|---|---|
-| `gpubase_bygpu_b1` | 3 h | |
-| `gpubase_bygpu_b2` | 12 h | (was 6 h pre-2026-05; verify with `sinfo`) |
-| `gpubase_bygpu_b3` | 1 day | (was 12 h pre-2026-05) |
-| `gpubase_bygpu_b4` | 3 days | |
-| `gpubase_bygpu_b5` | 7 days | |
-| `gpubase_bygpu_b6` | 28 days | |
-| `gpubackfill_bygpu` | (varies) | low-priority fill-in |
+- `gpubase_bygpu_b<N>` — scheduled per **GPU** (MIG slices / single-GPU jobs)
+- `gpubase_bynode_b<N>` — scheduled per **whole node** (multi-GPU / full-node jobs)
 
-You normally don't pick the partition; SLURM picks it. **Verify the band
-walltimes with `sinfo -o "%.20P %.20l"` before sizing a long job** —
-walltime bands have shifted at least once (the table above was last
-verified 2026-05-06).
+| Band | Wall-time |
+|---|---|
+| `b1` | 3 h |
+| `b2` | 12 h |
+| `b3` | 1 day |
+| `b4` | 3 days |
+| `b5` | 7 days |
+
+GPU bands run **b1–b5 only (max 7 days)** — there is **no GPU `b6`**. (`b6` = 28 days
+exists only for the *CPU* family `cpubase_bynode_b6`.) Also present: `gpubase_interac`
+(interactive), plus two **scheduler-internal** lower-priority lanes you **cannot** target with
+`--partition` (the `job_submit` lua plugin rejects explicit requests — keep submitting by
+`--time` only): `gpubackfill` (PriorityTier 2, opportunistic, not preemptible) and `gpupreempt`
+(PriorityTier 1, `PreemptMode=REQUEUE` — jobs are requeued when a higher-tier job needs the node).
+Their partition configs list longer `MaxTime` (1 day / 122 days), but the plugin still enforces the
+**7-day user cap** regardless. Verified 2026-05-25: `sbatch --test-only --partition=gpupreempt
+--time=10-0` → rejected *"exceeds the maximum walltime of 7.0 days"*; `--partition=gpubackfill` →
+*"submit without the --partition option"*.
+
+Verified live via `sinfo -o "%.30P %.14l"` (2026-05-25). Re-verify before sizing a
+long job — bands have shifted before.
 
 ## TRES weights (observed 2026-04, partition `gpubase_bygpu_b1`)
 

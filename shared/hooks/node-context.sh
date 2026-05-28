@@ -6,7 +6,10 @@
 # On login nodes:   warns against heavy operations, suggests srun/sbatch
 # On unknown hosts:  outputs {} (no context, graceful degradation)
 #
-# Never blocks — always allows the command to proceed.
+# Never blocks — always allows the command to proceed. This is an ADVISORY
+# nudge, not a safety guarantee: it cannot stop a heavy command on a login node,
+# it only injects context the model may heed. For a hard guarantee, enforce via
+# deny rules in settings/permissions, not this hook.
 
 set -euo pipefail
 
@@ -39,7 +42,7 @@ fi
 # Fallback: check hostname pattern for login nodes
 HOSTNAME="$(hostname -f 2>/dev/null || hostname)"
 
-if [[ "$HOSTNAME" =~ gl-login|lh-login|greatlakes\.arc-ts|lighthouse\.arc-ts|fir\.alliancecan\.ca|^fir ]]; then
+if [[ "$HOSTNAME" =~ \.alliancecan\.ca|^(fir|cedar|graham|narval|beluga|niagara|trillium|rorqual|killarney) ]]; then
     jq -n '{
         additionalContext: "LOGIN NODE — This is a shared login node. Do NOT run CPU/GPU/memory-intensive jobs here. Use srun/salloc for interactive compute or sbatch for batch jobs."
     }'
